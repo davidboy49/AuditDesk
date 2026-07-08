@@ -1,0 +1,505 @@
+import prisma from "./db";
+import { User, Department, UserGroup, AuditProject, Finding, Attachment } from "./mockData";
+
+export const dbService = {
+  // Departments
+  async getDepartments(): Promise<Department[]> {
+    return prisma.department.findMany({
+      orderBy: { name: "asc" }
+    });
+  },
+  async createDepartment(name: string, description: string): Promise<Department> {
+    return prisma.department.create({
+      data: { name, description }
+    });
+  },
+
+  // Groups
+  async getUserGroups(): Promise<UserGroup[]> {
+    return prisma.userGroup.findMany({
+      orderBy: { name: "asc" }
+    });
+  },
+  async createUserGroup(name: string, description: string): Promise<UserGroup> {
+    return prisma.userGroup.create({
+      data: { name, description }
+    });
+  },
+
+  // Users
+  async getUsers(): Promise<User[]> {
+    const users = await prisma.user.findMany({
+      include: {
+        department: true,
+        group: true
+      },
+      orderBy: { name: "asc" }
+    });
+    return users.map(u => ({
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role as any,
+      departmentId: u.departmentId,
+      groupId: u.groupId,
+      departmentName: u.department?.name || null,
+      groupName: u.group?.name || null
+    }));
+  },
+  async createUser(name: string, email: string, role: any, departmentId: string | null, groupId: string | null): Promise<User> {
+    const u = await prisma.user.create({
+      data: { name, email, role, departmentId, groupId }
+    });
+    return {
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role as any,
+      departmentId: u.departmentId,
+      groupId: u.groupId
+    };
+  },
+  async updateUser(userId: string, name: string, email: string, role: any, departmentId: string | null, groupId: string | null): Promise<User | null> {
+    const u = await prisma.user.update({
+      where: { id: userId },
+      data: { name, email, role, departmentId, groupId }
+    });
+    return {
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role as any,
+      departmentId: u.departmentId,
+      groupId: u.groupId
+    };
+  },
+  async updateUserGroupAndDept(userId: string, departmentId: string | null, groupId: string | null): Promise<User | null> {
+    const u = await prisma.user.update({
+      where: { id: userId },
+      data: { departmentId, groupId }
+    });
+    return {
+      id: u.id,
+      email: u.email,
+      name: u.name,
+      role: u.role as any,
+      departmentId: u.departmentId,
+      groupId: u.groupId
+    };
+  },
+  async deleteUser(userId: string): Promise<boolean> {
+    // Delete documents uploaded by this user
+    await prisma.document.deleteMany({ where: { uploaderId: userId } });
+    // Delete findings reported by this user
+    await prisma.finding.deleteMany({ where: { auditorId: userId } });
+    // Delete reports created by this user
+    await prisma.report.deleteMany({ where: { creatorId: userId } });
+    // Set leadAuditorId to null in any projects where they lead
+    await prisma.auditProject.updateMany({
+      where: { leadAuditorId: userId },
+      data: { leadAuditorId: null }
+    });
+    // Safely delete the user
+    await prisma.user.delete({
+      where: { id: userId }
+    });
+    return true;
+  },
+
+  // Projects
+  async getProjects(): Promise<AuditProject[]> {
+    const projects = await prisma.auditProject.findMany({
+      include: {
+        auditors: true,
+        attachments: true
+      },
+      orderBy: { code: "asc" }
+    });
+    return projects.map(p => ({
+      id: p.id,
+      name: p.name,
+      code: p.code,
+      status: p.status as any,
+      workflowStage: p.workflowStage as any,
+      deptPicIds: p.deptPicIds,
+      scope: p.scope,
+      planningDetails: p.planningDetails,
+      startDate: p.startDate.toISOString().split("T")[0],
+      endDate: p.endDate.toISOString().split("T")[0],
+      leadAuditorId: p.leadAuditorId,
+      objectives: p.objectives,
+      riskProcess: p.riskProcess,
+      riskClass: p.riskClass,
+      opEx: p.opEx,
+      fieldwork: p.fieldwork,
+      outcome: p.outcome,
+      dataRequestType: p.dataRequestType,
+      focusArea: p.focusArea,
+      opExTimeline: p.opExTimeline,
+      approvals: p.approvals,
+      auditorIds: p.auditors.map(a => a.id),
+      attachments: p.attachments.map(a => ({
+        id: a.id,
+        fileName: a.fileName,
+        fileSize: a.fileSize,
+        fileType: a.fileType,
+        fileData: a.fileData,
+        projectId: a.projectId,
+        createdAt: a.createdAt.toISOString()
+      }))
+    }));
+  },
+  async createProject(name: string, code: string, status: any, scope: string, planningDetails: string, startDate: string, endDate: string, leadAuditorId: string | null): Promise<AuditProject> {
+    const p = await prisma.auditProject.create({
+      data: {
+        name,
+        code,
+        status,
+        scope,
+        planningDetails,
+        startDate: new Date(startDate),
+        endDate: new Date(endDate),
+        leadAuditorId,
+        workflowStage: "DRAFTING",
+        deptPicIds: "",
+        objectives: "<p>Ensure operational controls conform to local regulatory parameters, and technical data pathways remain uncompromised.</p>",
+        riskProcess: "<p>Verify VPC subnet logs meet security policy constraints, checking active firewalls against the compliance catalog.</p>",
+        riskClass: "<p>Inherited vulnerabilities categorized by threat surface mapping per the 2026 enterprise risk guidelines.</p>",
+        opEx: "<p>Sample log outputs to trace system database transactions, using automated script checks to map discrepancies.</p>",
+        fieldwork: "<p>Anomalies in database query latency will immediately trigger manual secondary auditor integrity checklists.</p>",
+        outcome: "<p>Comprehensive summary output highlighting compliance metrics, critical findings logs, and recommended adjustments.</p>",
+        dataRequestType: "<p>Define the formats, sample counts, and audit logs required for secure transfer.</p>",
+        focusArea: "<p>Highlight the high-risk transaction zones, sensitive credentials storage, and cloud service endpoints.</p>",
+        opExTimeline: "{\"presentationDate\":\"\",\"notificationDate\":\"2026-07-09\",\"fieldWorkStart\":\"2026-07-20\",\"fieldWorkEnd\":\"2026-07-31\",\"findingReportOffset\":3,\"finalReportOffset\":7}",
+        approvals: "{\"preparedByName\":\"\",\"preparedByTitle\":\"Lead Auditor\",\"preparedDate\":\"\",\"approvedByName\":\"\",\"approvedByTitle\":\"Head of Department\",\"approvedDate\":\"\"}"
+      },
+      include: {
+        auditors: true,
+        attachments: true
+      }
+    });
+    return {
+      id: p.id,
+      name: p.name,
+      code: p.code,
+      status: p.status as any,
+      workflowStage: p.workflowStage as any,
+      deptPicIds: p.deptPicIds,
+      scope: p.scope,
+      planningDetails: p.planningDetails,
+      startDate: p.startDate.toISOString().split("T")[0],
+      endDate: p.endDate.toISOString().split("T")[0],
+      leadAuditorId: p.leadAuditorId,
+      objectives: p.objectives,
+      riskProcess: p.riskProcess,
+      riskClass: p.riskClass,
+      opEx: p.opEx,
+      fieldwork: p.fieldwork,
+      outcome: p.outcome,
+      dataRequestType: p.dataRequestType,
+      focusArea: p.focusArea,
+      opExTimeline: p.opExTimeline,
+      approvals: p.approvals,
+      auditorIds: p.auditors.map(a => a.id),
+      attachments: []
+    };
+  },
+  async updateProject(id: string, updates: Partial<AuditProject>): Promise<AuditProject | null> {
+    const auditorConnections = updates.auditorIds ? {
+      set: updates.auditorIds.map(audId => ({ id: audId }))
+    } : undefined;
+
+    const p = await prisma.auditProject.update({
+      where: { id },
+      data: {
+        name: updates.name,
+        status: updates.status,
+        workflowStage: updates.workflowStage,
+        deptPicIds: updates.deptPicIds,
+        scope: updates.scope,
+        planningDetails: updates.planningDetails,
+        startDate: updates.startDate ? new Date(updates.startDate) : undefined,
+        endDate: updates.endDate ? new Date(updates.endDate) : undefined,
+        leadAuditorId: updates.leadAuditorId,
+        objectives: updates.objectives,
+        riskProcess: updates.riskProcess,
+        riskClass: updates.riskClass,
+        opEx: updates.opEx,
+        fieldwork: updates.fieldwork,
+        outcome: updates.outcome,
+        dataRequestType: updates.dataRequestType,
+        focusArea: updates.focusArea,
+        opExTimeline: updates.opExTimeline,
+        approvals: updates.approvals,
+        auditors: auditorConnections
+      },
+      include: {
+        auditors: true,
+        attachments: true
+      }
+    });
+    return {
+      id: p.id,
+      name: p.name,
+      code: p.code,
+      status: p.status as any,
+      workflowStage: p.workflowStage as any,
+      deptPicIds: p.deptPicIds,
+      scope: p.scope,
+      planningDetails: p.planningDetails,
+      startDate: p.startDate.toISOString().split("T")[0],
+      endDate: p.endDate.toISOString().split("T")[0],
+      leadAuditorId: p.leadAuditorId,
+      objectives: p.objectives,
+      riskProcess: p.riskProcess,
+      riskClass: p.riskClass,
+      opEx: p.opEx,
+      fieldwork: p.fieldwork,
+      outcome: p.outcome,
+      dataRequestType: p.dataRequestType,
+      focusArea: p.focusArea,
+      opExTimeline: p.opExTimeline,
+      approvals: p.approvals,
+      auditorIds: p.auditors.map(a => a.id),
+      attachments: p.attachments.map(a => ({
+        id: a.id,
+        fileName: a.fileName,
+        fileSize: a.fileSize,
+        fileType: a.fileType,
+        fileData: a.fileData,
+        projectId: a.projectId,
+        createdAt: a.createdAt.toISOString()
+      }))
+    };
+  },
+
+  // Findings
+  async getFindings(): Promise<Finding[]> {
+    const findings = await prisma.finding.findMany({
+      include: {
+        project: true,
+        auditor: true
+      },
+      orderBy: { createdAt: "desc" }
+    });
+    return findings.map(f => ({
+      id: f.id,
+      title: f.title,
+      description: f.description,
+      status: f.status as any,
+      severity: f.severity as any,
+      recommendation: f.recommendation,
+      projectId: f.projectId,
+      projectName: f.project.name,
+      auditorId: f.auditorId,
+      auditorName: f.auditor.name,
+      createdAt: f.createdAt.toISOString()
+    }));
+  },
+  async createFinding(title: string, description: string, severity: any, status: any, recommendation: string, projectId: string, auditorId: string): Promise<Finding> {
+    const f = await prisma.finding.create({
+      data: {
+        title,
+        description,
+        severity,
+        status,
+        recommendation,
+        projectId,
+        auditorId
+      },
+      include: {
+        project: true,
+        auditor: true
+      }
+    });
+    return {
+      id: f.id,
+      title: f.title,
+      description: f.description,
+      status: f.status as any,
+      severity: f.severity as any,
+      recommendation: f.recommendation,
+      projectId: f.projectId,
+      projectName: f.project.name,
+      auditorId: f.auditorId,
+      auditorName: f.auditor.name,
+      createdAt: f.createdAt.toISOString()
+    };
+  },
+  async updateFindingStatus(id: string, status: any): Promise<Finding | null> {
+    const f = await prisma.finding.update({
+      where: { id },
+      data: { status },
+      include: {
+        project: true,
+        auditor: true
+      }
+    });
+    return {
+      id: f.id,
+      title: f.title,
+      description: f.description,
+      status: f.status as any,
+      severity: f.severity as any,
+      recommendation: f.recommendation,
+      projectId: f.projectId,
+      projectName: f.project.name,
+      auditorId: f.auditorId,
+      auditorName: f.auditor.name,
+      createdAt: f.createdAt.toISOString()
+    };
+  },
+
+  // Attachments
+  async addAttachment(projectId: string, fileName: string, fileSize: number, fileType: string, fileData: string): Promise<Attachment> {
+    const a = await prisma.attachment.create({
+      data: {
+        projectId,
+        fileName,
+        fileSize,
+        fileType,
+        fileData
+      }
+    });
+    return {
+      id: a.id,
+      fileName: a.fileName,
+      fileSize: a.fileSize,
+      fileType: a.fileType,
+      fileData: a.fileData,
+      projectId: a.projectId,
+      createdAt: a.createdAt.toISOString()
+    };
+  },
+  async deleteAttachment(id: string): Promise<boolean> {
+    await prisma.attachment.delete({
+      where: { id }
+    });
+    return true;
+  },
+
+  // Execution Schedules
+  async getExecutionSchedules(): Promise<any[]> {
+    const schedules = await prisma.executionSchedule.findMany({
+      include: {
+        project: true
+      },
+      orderBy: { createdAt: "desc" }
+    });
+    return schedules.map(s => ({
+      id: s.id,
+      projectId: s.projectId,
+      projectName: s.project.name,
+      projectCode: s.project.code,
+      organization: s.organization,
+      address: s.address,
+      visitNumber: s.visitNumber,
+      actualVisitDate: s.actualVisitDate,
+      auditPeriod: s.auditPeriod,
+      leadExecution: s.leadExecution,
+      teamMembers: s.teamMembers,
+      additionalAttendees: s.additionalAttendees,
+      standards: s.standards,
+      language: s.language,
+      objectives: s.objectives,
+      scope: s.scope,
+      scheduleRows: s.scheduleRows,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString()
+    }));
+  },
+  async createExecutionSchedule(data: {
+    projectId: string;
+    organization: string;
+    address: string;
+    visitNumber: string;
+    actualVisitDate: string;
+    auditPeriod: string;
+    leadExecution: string;
+    teamMembers: string;
+    additionalAttendees: string;
+    standards: string;
+    language: string;
+    objectives: string;
+    scope: string;
+    scheduleRows: string;
+  }): Promise<any> {
+    const s = await prisma.executionSchedule.create({
+      data,
+      include: {
+        project: true
+      }
+    });
+    return {
+      id: s.id,
+      projectId: s.projectId,
+      projectName: s.project.name,
+      projectCode: s.project.code,
+      organization: s.organization,
+      address: s.address,
+      visitNumber: s.visitNumber,
+      actualVisitDate: s.actualVisitDate,
+      auditPeriod: s.auditPeriod,
+      leadExecution: s.leadExecution,
+      teamMembers: s.teamMembers,
+      additionalAttendees: s.additionalAttendees,
+      standards: s.standards,
+      language: s.language,
+      objectives: s.objectives,
+      scope: s.scope,
+      scheduleRows: s.scheduleRows,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString()
+    };
+  },
+  async updateExecutionSchedule(id: string, data: Partial<{
+    organization: string;
+    address: string;
+    visitNumber: string;
+    actualVisitDate: string;
+    auditPeriod: string;
+    leadExecution: string;
+    teamMembers: string;
+    additionalAttendees: string;
+    standards: string;
+    language: string;
+    objectives: string;
+    scope: string;
+    scheduleRows: string;
+  }>): Promise<any | null> {
+    const s = await prisma.executionSchedule.update({
+      where: { id },
+      data,
+      include: {
+        project: true
+      }
+    });
+    return {
+      id: s.id,
+      projectId: s.projectId,
+      projectName: s.project.name,
+      projectCode: s.project.code,
+      organization: s.organization,
+      address: s.address,
+      visitNumber: s.visitNumber,
+      actualVisitDate: s.actualVisitDate,
+      auditPeriod: s.auditPeriod,
+      leadExecution: s.leadExecution,
+      teamMembers: s.teamMembers,
+      additionalAttendees: s.additionalAttendees,
+      standards: s.standards,
+      language: s.language,
+      objectives: s.objectives,
+      scope: s.scope,
+      scheduleRows: s.scheduleRows,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString()
+    };
+  },
+  async deleteExecutionSchedule(id: string): Promise<boolean> {
+    await prisma.executionSchedule.delete({
+      where: { id }
+    });
+    return true;
+  }
+};

@@ -1,0 +1,150 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id           String      @id @default(uuid())
+  email        String      @unique
+  name         String
+  role         String      // "ADMIN", "LEAD_AUDITOR", "AUDITOR", "AUDITEE"
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  groupId      String?
+  group        UserGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  documents    Document[]
+  findings     Finding[]
+  reports      Report[]
+  projects     AuditProject[] @relation("ProjectAuditors")
+}
+
+model Department {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model UserGroup {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  description String?
+  users       User[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AuditProject {
+  id              String       @id @default(uuid())
+  name            String
+  code            String       @unique
+  status          String       // "PLANNING", "IN_PROGRESS", "REPORTING", "ARCHIVED"
+  workflowStage   String       @default("DRAFTING") // "DRAFTING", "REVIEW", "PENDING_PIC", "APPROVED"
+  deptPicIds      String       @default("") // Comma-separated list of User IDs representing department PICs
+  scope           String
+  planningDetails String
+  startDate       DateTime
+  endDate         DateTime
+  leadAuditorId   String?
+  
+  // Custom Scoping details fields
+  objectives      String       @default("")
+  riskProcess     String       @default("")
+  riskClass       String       @default("")
+  opEx            String       @default("")
+  fieldwork       String       @default("")
+  outcome         String       @default("")
+  dataRequestType String       @default("")
+  focusArea       String       @default("")
+  opExTimeline    String       @default("")
+  approvals       String       @default("")
+
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  documents       Document[]
+  findings        Finding[]
+  reports         Report[]
+  attachments     Attachment[]
+  auditors        User[]       @relation("ProjectAuditors")
+  executionSchedules ExecutionSchedule[]
+}
+
+model Attachment {
+  id        String       @id @default(uuid())
+  fileName  String
+  fileSize  Int
+  fileType  String
+  fileData  String       // Base64-encoded file data
+  projectId String
+  project   AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+}
+
+model Document {
+  id         String       @id @default(uuid())
+  title      String
+  content    String
+  projectId  String
+  project    AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  uploaderId String
+  uploader   User         @relation(fields: [uploaderId], references: [id])
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+}
+
+model Finding {
+  id             String       @id @default(uuid())
+  title          String
+  description    String
+  status         String       // "OPEN", "UNDER_REVIEW", "CLOSED"
+  severity       String       // "LOW", "MEDIUM", "HIGH", "CRITICAL"
+  recommendation String
+  projectId      String
+  project   AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  auditorId      String
+  auditor        User         @relation(fields: [auditorId], references: [id])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model Report {
+  id        String       @id @default(uuid())
+  title     String
+  summary   String
+  status    String       // "DRAFT", "FINAL"
+  projectId String
+  project   AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creatorId String
+  creator   User         @relation(fields: [creatorId], references: [id])
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model ExecutionSchedule {
+  id              String       @id @default(uuid())
+  projectId       String
+  project         AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organization    String
+  address         String
+  visitNumber     String       @default("01")
+  actualVisitDate String
+  auditPeriod     String
+  leadExecution   String
+  teamMembers     String       @default("") // Comma-separated list of names
+  additionalAttendees String   @default("")
+  standards       String       @default("Work Procedure, work instruction, and policy")
+  language        String       @default("English")
+  objectives      String       @default("")
+  scope           String       @default("")
+  scheduleRows    String       // JSON serialized rows: [{date, time, activity, conductBy, pIncharge}]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+}
