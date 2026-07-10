@@ -31,10 +31,11 @@ import {
 import { RBAC } from "@/lib/auth";
 import ActionToolbar from "@/components/ui/action-toolbar";
 import RichEditor from "@/components/ui/rich-editor";
+import MultiSelect from "@/components/ui/multi-select";
 
 // Helper to format date strings for display
 const formatDateString = (dateStr: string) => {
-  if (!dateStr) return "No Date Set";
+  if (!dateStr) return "Date not selected";
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) {
     try {
       const parts = dateStr.split('-');
@@ -140,6 +141,50 @@ export default function ScheduleClient({
 
   // Feedback notifier
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  // Custom dialog alert states
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: "",
+    onConfirm: () => {},
+  });
+
+  const showConfirm = (title: string, message: string, onConfirm: () => void) => {
+    setConfirmDialog({
+      isOpen: true,
+      title,
+      message,
+      onConfirm,
+    });
+  };
+
+  // Convert teamMembers string to array for MultiSelect component
+  const teamMembersArray = teamMembers
+    ? teamMembers.split(",").map(name => name.trim()).filter(Boolean)
+    : [];
+
+  // Convert leadExecution string to array for MultiSelect component
+  const leadExecutionArray = leadExecution
+    ? leadExecution.split(",").map(name => name.trim()).filter(Boolean)
+    : [];
+
+  // Convert additionalAttendees string to array for MultiSelect component
+  const additionalAttendeesArray = additionalAttendees
+    ? additionalAttendees.split(",").map(name => name.trim()).filter(Boolean)
+    : [];
+
+  // Options derived from users in system
+  const userOptions = users.map(u => ({
+    value: u.name,
+    label: u.name,
+    subLabel: `${u.role.replace("_", " ")}${u.email ? ` • ${u.email}` : ""}`
+  }));
 
   const canManage = currentUser.role !== "AUDITEE"; // Auditor/Lead/Admin can manage schedules
 
@@ -317,20 +362,24 @@ export default function ScheduleClient({
     const s = schedules.find(x => x.id === selectedScheduleId);
     if (!s) return;
 
-    if (!window.confirm(`Delete execution schedule for "${s.projectName}"?`)) return;
-
-    try {
-      const success = await deleteExecutionScheduleAction(selectedScheduleId);
-      if (success) {
-        showFeedback("Schedule removed from ledger.");
-        setSelectedScheduleId(null);
-        const fresh = await getExecutionSchedulesAction();
-        setSchedules(fresh);
+    showConfirm(
+      "Delete Execution Schedule",
+      `Are you sure you want to delete the execution schedule for "${s.projectName}"? This action cannot be undone.`,
+      async () => {
+        try {
+          const success = await deleteExecutionScheduleAction(selectedScheduleId);
+          if (success) {
+            showFeedback("Schedule removed from ledger.");
+            setSelectedScheduleId(null);
+            const fresh = await getExecutionSchedulesAction();
+            setSchedules(fresh);
+          }
+        } catch (err: any) {
+          console.error(err);
+          alert(`Delete error: ${err.message || err.toString()}`);
+        }
       }
-    } catch (err: any) {
-      console.error(err);
-      alert(`Delete error: ${err.message || err.toString()}`);
-    }
+    );
   };
 
   // Interactive Row Editor Handlers
@@ -340,20 +389,24 @@ export default function ScheduleClient({
   };
 
   const addRow = () => {
-    const newRow = { date: new Date().toISOString().split('T')[0], time: "09:00 AM - 10:00 AM", activity: "", conductBy: "", pIncharge: "" };
+    const newRow = { day: "", date: new Date().toISOString().split('T')[0], time: "09:00 AM - 10:00 AM", activity: "", conductBy: "", pIncharge: "" };
     setRows([...rows, newRow]);
     setActiveRowIndex(rows.length);
     setDraftRow({ ...newRow });
   };
 
   const removeRow = (index: number) => {
-    if (confirm("Are you sure you want to delete this slot?")) {
-      setRows(rows.filter((_, idx) => idx !== index));
-      if (activeRowIndex === index) {
-        setActiveRowIndex(null);
-        setDraftRow(null);
+    showConfirm(
+      "Delete Execution Slot",
+      "Are you sure you want to delete this execution slot? This action cannot be undone.",
+      () => {
+        setRows(rows.filter((_, idx) => idx !== index));
+        if (activeRowIndex === index) {
+          setActiveRowIndex(null);
+          setDraftRow(null);
+        }
       }
-    }
+    );
   };
 
   const updateDraftField = (field: keyof ScheduleRow, value: string) => {
@@ -374,6 +427,7 @@ export default function ScheduleClient({
     if (activeRowIndex !== null && draftRow) {
       const original = rows[activeRowIndex];
       const hasChanges = 
+        original.day !== draftRow.day ||
         original.date !== draftRow.date ||
         original.time !== draftRow.time ||
         original.activity !== draftRow.activity ||
@@ -381,10 +435,14 @@ export default function ScheduleClient({
         original.pIncharge !== draftRow.pIncharge;
 
       if (hasChanges) {
-        if (confirm("You have unsaved changes in this slot. Discard them?")) {
-          setActiveRowIndex(null);
-          setDraftRow(null);
-        }
+        showConfirm(
+          "Discard Changes",
+          "You have unsaved changes in this slot. Are you sure you want to discard them?",
+          () => {
+            setActiveRowIndex(null);
+            setDraftRow(null);
+          }
+        );
       } else {
         setActiveRowIndex(null);
         setDraftRow(null);
@@ -519,7 +577,7 @@ export default function ScheduleClient({
       {/* Edit/Create Popup Modal Styled Like "2. Schedule.doc" Document */}
       {isModalOpen && (
         <div id="scoping-modal-root" className="fixed inset-0 bg-slate-900/60 dark:bg-black/80 flex justify-center z-50 overflow-y-auto p-4 md:p-8 animate-fade-in no-print-backdrop">
-          <div className="bg-white dark:bg-slate-950 w-full max-w-[92vw] md:max-w-7xl rounded-lg shadow-2xl flex flex-col overflow-hidden h-fit border border-slate-200 dark:border-slate-850 scoping-modal-container">
+          <div className="bg-white dark:bg-slate-950 w-full max-w-[98vw] xl:max-w-[98vw] rounded-lg shadow-2xl flex flex-col overflow-hidden h-fit border border-slate-200 dark:border-slate-850 scoping-modal-container">
             
             {/* Modal Header */}
             <div className="px-8 py-5 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -559,7 +617,7 @@ export default function ScheduleClient({
             </div>
 
             {/* Modal Scrollable Body */}
-            <form onSubmit={handleSaveSchedule} className="p-8 space-y-8 overflow-y-auto max-h-[75vh]">
+            <form onSubmit={handleSaveSchedule} className="p-8 space-y-8 overflow-y-auto max-h-[86vh]">
               
               {/* Select Project Plan dropdown (only in create mode) */}
               <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-850 space-y-3 no-print">
@@ -679,13 +737,12 @@ export default function ScheduleClient({
                         <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
                           Lead Execution:
                         </td>
-                        <td colSpan={3} className="px-4 py-2">
-                          <input 
-                            type="text" 
-                            value={leadExecution}
-                            onChange={(e) => setLeadExecution(e.target.value)}
-                            placeholder="A: Mr. El Thany"
-                            className="w-full bg-transparent border-none p-0 text-xs focus:outline-none text-slate-800 dark:text-slate-100"
+                        <td colSpan={3} className="px-4 py-2.5">
+                          <MultiSelect
+                            selectedValues={leadExecutionArray}
+                            onChange={(values) => setLeadExecution(values.join(", "))}
+                            options={userOptions}
+                            placeholder="Type to search system users or press Enter for custom names..."
                           />
                         </td>
                       </tr>
@@ -695,34 +752,13 @@ export default function ScheduleClient({
                         <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
                           Team Member(s):
                         </td>
-                        <td colSpan={3} className="p-0">
-                          <div className="grid grid-cols-3 divide-x divide-slate-300 dark:divide-slate-800/80 h-full">
-                            <div className="px-4 py-2">
-                              <input 
-                                type="text" 
-                                value={teamMembers}
-                                onChange={(e) => setTeamMembers(e.target.value)}
-                                placeholder="B: Hong Solina"
-                                className="w-full bg-transparent border-none p-0 text-xs focus:outline-none text-slate-800 dark:text-slate-100 font-medium"
-                              />
-                            </div>
-                            <div className="px-4 py-2">
-                              <input 
-                                type="text" 
-                                value={additionalAttendees}
-                                onChange={(e) => setAdditionalAttendees(e.target.value)}
-                                placeholder="C: Mao Sokpisith"
-                                className="w-full bg-transparent border-none p-0 text-xs focus:outline-none text-slate-800 dark:text-slate-100 font-medium"
-                              />
-                            </div>
-                            <div className="px-4 py-2">
-                              <input 
-                                type="text" 
-                                placeholder="D: "
-                                className="w-full bg-transparent border-none p-0 text-xs focus:outline-none text-slate-800 dark:text-slate-100"
-                              />
-                            </div>
-                          </div>
+                        <td colSpan={3} className="px-4 py-2.5">
+                          <MultiSelect
+                            selectedValues={teamMembersArray}
+                            onChange={(values) => setTeamMembers(values.join(", "))}
+                            options={userOptions}
+                            placeholder="Type to search system users or press Enter for custom names..."
+                          />
                         </td>
                       </tr>
 
@@ -731,11 +767,12 @@ export default function ScheduleClient({
                         <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300 leading-normal">
                           Additional Attendees and Roles:
                         </td>
-                        <td colSpan={3} className="px-4 py-2">
-                          <input 
-                            type="text" 
-                            placeholder="Additional attendees..."
-                            className="w-full bg-transparent border-none p-0 text-xs focus:outline-none text-slate-800 dark:text-slate-100"
+                        <td colSpan={3} className="px-4 py-2.5">
+                          <MultiSelect
+                            selectedValues={additionalAttendeesArray}
+                            onChange={(values) => setAdditionalAttendees(values.join(", "))}
+                            options={userOptions}
+                            placeholder="Type to search system users or press Enter for custom names..."
                           />
                         </td>
                       </tr>
@@ -822,85 +859,110 @@ export default function ScheduleClient({
                   </button>
                 </div>
 
-                {/* 1. Interactive Cards Editor View (Screen only - 1 by 1 vertical listing) */}
-                <div className="no-print space-y-3.5">
-                  {rows.length === 0 ? (
-                    <div className="text-center py-8 text-slate-400 italic border border-dashed border-slate-200 dark:border-slate-800 rounded-lg">
-                      No slots created yet. Click "+ Add Day/Slot" above.
-                    </div>
-                  ) : (
-                    rows.map((row, index) => {
-                      return (
-                        <div 
-                          key={index}
-                          onClick={() => startEditingRow(index)}
-                          className="border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 rounded-lg p-5 transition-all shadow-sm hover:border-slate-350 dark:hover:border-slate-700 cursor-pointer flex justify-between items-center gap-6"
-                        >
-                          <div className="space-y-1.5 flex-1">
-                            <div className="flex flex-wrap items-center gap-2">
-                              <span className="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[9px] font-mono font-bold text-slate-600 dark:text-slate-400">
-                                SLOT #{index + 1}
-                              </span>
-                              <span className="font-bold text-slate-800 dark:text-slate-200 text-xs">
-                                {formatDateString(row.date)}
-                              </span>
-                              <span className="text-slate-350 dark:text-slate-650 font-mono text-[10px]">•</span>
-                              <span className="text-slate-600 dark:text-slate-400 font-mono text-[10px]">
-                                {row.time || "No Time Set"}
-                              </span>
-                            </div>
-                            
-                            <div 
-                              className="text-xs text-slate-650 dark:text-slate-400 line-clamp-2 leading-relaxed prose prose-sm dark:prose-invert max-h-12 overflow-hidden"
+                {/* 1. Interactive Table Editor View (Screen only) */}
+                <div className="no-print overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-950">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-slate-555 dark:text-slate-400 uppercase font-sans font-bold">
+                      <tr>
+                        <th className="px-4 py-3 w-16 border-r border-slate-200 dark:border-slate-800">Day</th>
+                        <th className="px-4 py-3 w-28 border-r border-slate-200 dark:border-slate-800">Date</th>
+                        <th className="px-4 py-3 w-36 border-r border-slate-200 dark:border-slate-800">Time</th>
+                        <th className="px-4 py-3 border-r border-slate-200 dark:border-slate-800">Functional Units/Activities/ Document request</th>
+                        <th className="px-4 py-3 w-40 border-r border-slate-200 dark:border-slate-800">Conduct by</th>
+                        <th className="px-4 py-3 w-40 border-r border-slate-200 dark:border-slate-800">P-Incharge</th>
+                        <th className="px-4 py-3 w-24 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 dark:divide-slate-800/80 bg-white dark:bg-slate-950">
+                      {rows.length === 0 ? (
+                        <tr>
+                          <td colSpan={7} className="text-center py-8 text-slate-400 italic">
+                            No slots created yet. Click "+ Add Day/Slot" above.
+                          </td>
+                        </tr>
+                      ) : (
+                        rows.map((row, index) => (
+                          <tr 
+                            key={index}
+                            onClick={() => startEditingRow(index)}
+                            className="hover:bg-slate-50/50 dark:hover:bg-slate-900/35 transition-colors cursor-pointer align-top border-b border-slate-200 dark:border-slate-800 last:border-0"
+                          >
+                            <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-semibold text-slate-700 dark:text-slate-300">
+                              {row.day || ""}
+                            </td>
+                            <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
+                              {formatDateString(row.date)}
+                            </td>
+                            <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-mono text-[10px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                              {row.time || "Time not selected"}
+                            </td>
+                            <td 
+                              className="p-3 border-r border-slate-200 dark:border-slate-800 leading-relaxed text-slate-700 dark:text-slate-355 rich-text-content"
                               dangerouslySetInnerHTML={{ __html: row.activity || "<i>No activities set. Click to configure.</i>" }}
                             />
-
-                            <div className="flex flex-wrap gap-x-4 gap-y-1 pt-1 text-[10px] text-slate-500">
-                              <span className="flex items-center gap-1 font-medium">
-                                <Users className="w-3.5 h-3.5 text-[#0066cc]" />
-                                <span>Conduct: {row.conductBy || "Unassigned"}</span>
-                              </span>
-                              <span className="flex items-center gap-1 font-medium">
-                                <Building className="w-3.5 h-3.5 text-accent" />
-                                <span>PIC: {row.pIncharge || "Unassigned"}</span>
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-1 shrink-0 no-print" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              onClick={() => startEditingRow(index)}
-                              className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-md text-slate-500 cursor-pointer"
-                              title="Edit Slot"
-                            >
-                              <Edit className="w-4 h-4" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => removeRow(index)}
-                              className="p-2 hover:bg-red-500/10 rounded-md text-red-500 cursor-pointer"
-                              title="Delete Slot"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
+                            <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-semibold text-[#05375c] dark:text-sky-400 whitespace-pre-wrap">
+                              {row.conductBy || "Unassigned"}
+                            </td>
+                            <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-semibold text-slate-700 dark:text-slate-300 whitespace-pre-wrap">
+                              {row.pIncharge || "Unassigned"}
+                            </td>
+                            <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingRow(index)}
+                                  className="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded text-slate-500 cursor-pointer"
+                                  title="Edit Slot"
+                                >
+                                  <Edit className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => removeRow(index)}
+                                  className="p-1.5 hover:bg-red-500/10 rounded text-red-500 cursor-pointer"
+                                  title="Delete Slot"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
 
-                {/* 2. Nested Schedule Slot Editor Modal (Screen only)                 {/* 2. Nested Schedule Slot Editor Modal (Screen only) */}
+                {/* 2. Nested Schedule Slot Editor Modal (Screen only) */}
                 {activeRowIndex !== null && draftRow !== null && (() => {
                   const timeVals = parseTimeRange(draftRow.time);
                   const validDate = /^\d{4}-\d{2}-\d{2}$/.test(draftRow.date) 
                     ? draftRow.date 
-                    : new Date().toISOString().split('T')[0];
+                    : "";
+                  const conductByArray = draftRow.conductBy
+                    ? draftRow.conductBy.split(",").map(name => name.trim()).filter(Boolean)
+                    : [];
+                  const pInchargeArray = draftRow.pIncharge
+                    ? draftRow.pIncharge.split(",").map(name => name.trim()).filter(Boolean)
+                    : [];
+
+                  const auditorOptions = users
+                    .filter(u => u.role === "ADMIN" || u.role === "LEAD_AUDITOR" || u.role === "AUDITOR")
+                    .map(u => ({
+                      value: u.name,
+                      label: u.name,
+                      subLabel: `${u.role.replace("_", " ")}${u.email ? ` • ${u.email}` : ""}`
+                    }));
+
+                  const picOptions = users.map(u => ({
+                    value: u.name,
+                    label: u.name,
+                    subLabel: `${u.role.replace("_", " ")}${u.email ? ` • ${u.email}` : ""}`
+                  }));
 
                   return (
                     <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/85 flex justify-center items-center z-[60] p-4 animate-fade-in no-print">
-                      <div className="bg-white dark:bg-slate-950 w-full max-w-2xl md:max-w-3xl h-[85vh] max-h-[750px] rounded-lg shadow-2xl flex flex-col overflow-hidden border border-slate-250 dark:border-slate-800 animate-slide-up">
+                      <div className="bg-white dark:bg-slate-950 w-full max-w-4xl md:max-w-5xl h-[90vh] max-h-[850px] rounded-lg shadow-2xl flex flex-col overflow-hidden border border-slate-250 dark:border-slate-800 animate-slide-up">
                         
                         {/* Slot Modal Header (Fixed at top) */}
                         <div className="px-6 py-4.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-855 flex justify-between items-center shrink-0">
@@ -939,7 +1001,21 @@ export default function ScheduleClient({
                             </button>
                             
                             {isParamsExpanded && (
-                              <div className="p-4 bg-white dark:bg-slate-950/40 grid grid-cols-2 gap-4 animate-fade-in border-t border-slate-100 dark:border-slate-800">
+                              <div className="p-4 bg-white dark:bg-slate-950/40 grid grid-cols-3 gap-4 animate-fade-in border-t border-slate-100 dark:border-slate-800">
+                                {/* Day Input */}
+                                <div className="space-y-1">
+                                  <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">
+                                    Day
+                                  </label>
+                                  <input 
+                                    type="text"
+                                    value={draftRow.day || ""}
+                                    onChange={(e) => updateDraftField("day", e.target.value)}
+                                    placeholder="e.g. 1-8 or empty"
+                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-250 dark:border-slate-805 rounded px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none"
+                                  />
+                                </div>
+
                                 {/* Date Selector */}
                                 <div className="space-y-1">
                                   <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">
@@ -987,38 +1063,23 @@ export default function ScheduleClient({
                                 {/* Conduct By Dropdown */}
                                 <div className="space-y-1">
                                   <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">Conducted By (Auditors)</label>
-                                  <select
-                                    value={draftRow.conductBy}
-                                    onChange={(e) => updateDraftField("conductBy", e.target.value)}
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-250 dark:border-slate-805 rounded px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
-                                  >
-                                    <option value="">Select Auditor Member...</option>
-                                    {users
-                                      .filter(u => u.role === "ADMIN" || u.role === "LEAD_AUDITOR" || u.role === "AUDITOR")
-                                      .map(u => (
-                                        <option key={u.id} value={u.name}>
-                                          {u.name} ({u.role.replace("_", " ")})
-                                        </option>
-                                      ))
-                                    }
-                                  </select>
+                                  <MultiSelect
+                                    selectedValues={conductByArray}
+                                    onChange={(values) => updateDraftField("conductBy", values.join(", "))}
+                                    options={auditorOptions}
+                                    placeholder="Select auditors or type custom name..."
+                                  />
                                 </div>
 
                                 {/* PIC Dropdown */}
                                 <div className="space-y-1">
                                   <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">Person in Charge (PIC)</label>
-                                  <select
-                                    value={draftRow.pIncharge}
-                                    onChange={(e) => updateDraftField("pIncharge", e.target.value)}
-                                    className="w-full bg-slate-50 dark:bg-slate-900 border border-slate-250 dark:border-slate-805 rounded px-3 py-2 text-xs text-slate-800 dark:text-slate-200 focus:outline-none cursor-pointer"
-                                  >
-                                    <option value="">Select PIC (Any User)...</option>
-                                    {users.map(u => (
-                                      <option key={u.id} value={u.name}>
-                                        {u.name} ({u.role})
-                                      </option>
-                                    ))}
-                                  </select>
+                                  <MultiSelect
+                                    selectedValues={pInchargeArray}
+                                    onChange={(values) => updateDraftField("pIncharge", values.join(", "))}
+                                    options={picOptions}
+                                    placeholder="Select PICs or type custom name..."
+                                  />
                                 </div>
                               </div>
                             )}
@@ -1026,7 +1087,7 @@ export default function ScheduleClient({
 
                           {/* Activities & Document Requests Rich Text Editor */}
                           <div className="space-y-1 flex-1 flex flex-col">
-                            <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold mb-1">
+                            <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold mb-1 ">
                               Activities & Document Requests
                             </label>
                             <RichEditor 
@@ -1067,20 +1128,22 @@ export default function ScheduleClient({
                   <table className="w-full text-left text-xs border-collapse">
                     <thead className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-300 dark:border-slate-800 text-slate-500 uppercase font-sans font-bold">
                       <tr>
+                        <th className="px-4 py-3 w-16 border-r border-slate-300 dark:border-slate-800">Day</th>
                         <th className="px-4 py-3 w-28 border-r border-slate-300 dark:border-slate-800">Date</th>
                         <th className="px-4 py-3 w-36 border-r border-slate-300 dark:border-slate-800">Time</th>
-                        <th className="px-4 py-3 border-r border-slate-300 dark:border-slate-800">Activities / Document Request</th>
-                        <th className="px-4 py-3 w-40 border-r border-slate-300 dark:border-slate-800">Conduct By</th>
-                        <th className="px-4 py-3 w-40">PIC in Charge</th>
+                        <th className="px-4 py-3 border-r border-slate-300 dark:border-slate-800">Functional Units/Activities/ Document request</th>
+                        <th className="px-4 py-3 w-40 border-r border-slate-300 dark:border-slate-800">Conduct by</th>
+                        <th className="px-4 py-3 w-40">P-Incharge</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-300 dark:divide-slate-800 bg-white dark:bg-slate-900">
                       {rows.map((row, index) => (
                         <tr key={index} className="align-top border-b border-slate-300 dark:border-slate-800">
+                          <td className="p-3 border-r border-slate-300 dark:border-slate-800 font-medium whitespace-pre-wrap">{row.day || ""}</td>
                           <td className="p-3 border-r border-slate-300 dark:border-slate-800 font-bold whitespace-pre-wrap">{formatDateString(row.date)}</td>
-                          <td className="p-3 border-r border-slate-300 dark:border-slate-800 font-mono text-[10px] whitespace-pre-wrap">{row.time}</td>
+                          <td className="p-3 border-r border-slate-300 dark:border-slate-800 font-mono text-[10px] whitespace-pre-wrap">{row.time || "Time not selected"}</td>
                           <td 
-                            className="p-3 border-r border-slate-300 dark:border-slate-800 leading-relaxed prose prose-sm max-w-none print:prose-neutral"
+                            className="p-3 border-r border-slate-300 dark:border-slate-800 leading-relaxed rich-text-content"
                             dangerouslySetInnerHTML={{ __html: row.activity }}
                           />
                           <td className="p-3 border-r border-slate-300 dark:border-slate-800 font-medium whitespace-pre-wrap">{row.conductBy}</td>
@@ -1097,6 +1160,43 @@ export default function ScheduleClient({
                 Note: The operational excellence execution schedule is subject to refinement based on real-time field risk discoveries.
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Custom Confirmation Alert Dialog */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/85 flex justify-center items-center z-[1000] p-4 animate-fade-in no-print">
+          <div className="bg-white dark:bg-slate-950 w-full max-w-sm rounded-lg shadow-2xl overflow-hidden border border-slate-250 dark:border-slate-800 animate-slide-up">
+            <div className="p-6 space-y-4">
+              <div className="flex items-center gap-3 text-red-500">
+                <Info className="w-5 h-5 text-red-500" />
+                <h3 className="font-bold text-slate-800 dark:text-slate-100 text-sm">
+                  {confirmDialog.title}
+                </h3>
+              </div>
+              <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                {confirmDialog.message}
+              </p>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setConfirmDialog(prev => ({ ...prev, isOpen: false }))}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 text-xs font-bold rounded cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    confirmDialog.onConfirm();
+                    setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+                  }}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-755 text-white text-xs font-bold rounded cursor-pointer"
+                >
+                  Confirm
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

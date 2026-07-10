@@ -75,6 +75,7 @@ export interface Finding {
 }
 
 export interface ScheduleRow {
+  day?: string;
   date: string;
   time: string;
   activity: string;
