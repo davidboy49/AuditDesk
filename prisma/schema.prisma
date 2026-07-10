@@ -54,6 +54,7 @@ model AuditProject {
   startDate       DateTime
   endDate         DateTime
   leadAuditorId   String?
+  auditorNames    String       @default("")
   
   // Custom Scoping details fields
   objectives      String       @default("")
@@ -147,4 +148,14 @@ model ExecutionSchedule {
   scheduleRows    String       // JSON serialized rows: [{date, time, activity, conductBy, pIncharge}]
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+}
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  userId    String
+  userEmail String
+  userName  String
+  action    String
+  details   String
+  createdAt DateTime @default(now())
 }

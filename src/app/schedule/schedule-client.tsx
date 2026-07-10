@@ -553,7 +553,14 @@ export default function ScheduleClient({
                       <td className="px-6 py-4.5 font-mono text-slate-700 dark:text-slate-300">
                         {s.projectCode}
                       </td>
-                      <td className="px-6 py-4.5 text-[#0066cc] font-medium hover:underline">
+                      <td 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedScheduleId(s.id);
+                          openEditModal(s);
+                        }}
+                        className="px-6 py-4.5 text-[#0066cc] font-medium hover:underline cursor-pointer"
+                      >
                         {s.projectName}
                       </td>
                       <td className="px-6 py-4.5 text-slate-600 dark:text-slate-400">
@@ -701,14 +708,14 @@ export default function ScheduleClient({
                         <td className="w-1/4 px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
                           Actual Visit Date:
                         </td>
-                        <td className="px-4 py-2 bg-yellow-100 dark:bg-yellow-950/20 font-bold text-slate-900 dark:text-yellow-100">
+                        <td className="px-4 py-2 bg-white-100 dark:bg-yellow-950/20 font-bold text-slate-900 dark:text-white-100">
                           <input 
                             type="text" 
                             required
                             value={actualVisitDate}
                             onChange={(e) => setActualVisitDate(e.target.value)}
                             placeholder="20-31 July 2026"
-                            className="w-full bg-transparent border-none p-0 text-xs focus:outline-none font-bold text-slate-900 dark:text-yellow-100"
+                            className="w-full bg-transparent border-none p-0 text-xs focus:outline-none font-bold text-slate-900"
                           />
                         </td>
                       </tr>
@@ -987,7 +994,7 @@ export default function ScheduleClient({
                         <div className="p-6 space-y-4 flex-1 overflow-y-auto">
                           
                           {/* Collapsible Parameters Section */}
-                          <div className="border border-slate-200 dark:border-slate-800 rounded-lg overflow-hidden shrink-0">
+                          <div className="border border-slate-200 dark:border-slate-800 rounded-lg shrink-0 relative z-30">
                             <button
                               type="button"
                               onClick={() => setIsParamsExpanded(!isParamsExpanded)}

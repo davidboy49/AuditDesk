@@ -28,6 +28,7 @@ import { AuditProject, User, Attachment } from "@/lib/mockData";
 import { RBAC } from "@/lib/auth";
 import RichEditor from "@/components/ui/rich-editor";
 import ActionToolbar from "@/components/ui/action-toolbar";
+import MultiSelect from "@/components/ui/multi-select";
 import { 
   updateProjectAction, 
   createProjectAction, 
@@ -148,24 +149,55 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     if (editLead !== (selectedProject.leadAuditorId || "")) return true;
     
     if (editWorkflowStage !== (selectedProject.workflowStage || "DRAFTING")) return true;
-    if (editObjectives !== (selectedProject.objectives || "")) return true;
-    if (editRiskProcess !== (selectedProject.riskProcess || "")) return true;
-    if (editRiskClass !== (selectedProject.riskClass || "")) return true;
-    if (editOpEx !== (selectedProject.opEx || "")) return true;
-    if (editFieldwork !== (selectedProject.fieldwork || "")) return true;
-    if (editOutcome !== (selectedProject.outcome || "")) return true;
-    if (editDataRequestType !== (selectedProject.dataRequestType || "")) return true;
-    if (editFocusArea !== (selectedProject.focusArea || "")) return true;
+    
+    const dbObjectives = selectedProject.objectives || "<p>Ensure operational controls conform to local regulatory parameters, and technical data pathways remain uncompromised.</p>";
+    if (editObjectives !== dbObjectives) return true;
+
+    const dbRiskProcess = selectedProject.riskProcess || "<p>Verify VPC subnet logs meet security policy constraints, checking active firewalls against the compliance catalog.</p>";
+    if (editRiskProcess !== dbRiskProcess) return true;
+
+    const dbRiskClass = selectedProject.riskClass || "<p>Inherited vulnerabilities categorized by threat surface mapping per the 2026 enterprise risk guidelines.</p>";
+    if (editRiskClass !== dbRiskClass) return true;
+
+    const dbOpEx = selectedProject.opEx || "<p>Sample log outputs to trace system database transactions, using automated script checks to map discrepancies.</p>";
+    if (editOpEx !== dbOpEx) return true;
+
+    const dbFieldwork = selectedProject.fieldwork || "<p>Anomalies in database query latency will immediately trigger manual secondary auditor integrity checklists.</p>";
+    if (editFieldwork !== dbFieldwork) return true;
+
+    const dbOutcome = selectedProject.outcome || "<p>Comprehensive summary output highlighting compliance metrics, critical findings logs, and recommended adjustments.</p>";
+    if (editOutcome !== dbOutcome) return true;
+
+    const dbDataRequest = selectedProject.dataRequestType || "<p>Define the formats, sample counts, and audit logs required for secure transfer.</p>";
+    if (editDataRequestType !== dbDataRequest) return true;
+
+    const dbFocusArea = selectedProject.focusArea || "<p>Highlight the high-risk transaction zones, sensitive credentials storage, and cloud service endpoints.</p>";
+    if (editFocusArea !== dbFocusArea) return true;
     
     const currentTimelineJson = JSON.stringify({
       presentationDate: editTimelinePresDate,
       notificationDate: editTimelineNotificationDate,
       fieldWorkStart: editTimelineFieldWorkStart,
       fieldWorkEnd: editTimelineFieldWorkEnd,
-      findingReportOffset: editTimelineFindingReportOffset,
-      finalReportOffset: editTimelineFinalReportOffset
+      findingReportOffset: Number(editTimelineFindingReportOffset),
+      finalReportOffset: Number(editTimelineFinalReportOffset)
     });
-    if (currentTimelineJson !== (selectedProject.opExTimeline || "")) return true;
+    let dbTimelineJson = selectedProject.opExTimeline || "";
+    if (!dbTimelineJson) {
+      dbTimelineJson = JSON.stringify({
+        presentationDate: "",
+        notificationDate: "2026-07-09",
+        fieldWorkStart: "2026-07-20",
+        fieldWorkEnd: "2026-07-31",
+        findingReportOffset: 3,
+        finalReportOffset: 7
+      });
+    } else {
+      try {
+        dbTimelineJson = JSON.stringify(JSON.parse(dbTimelineJson));
+      } catch {}
+    }
+    if (currentTimelineJson !== dbTimelineJson) return true;
     
     const currentApprovalsJson = JSON.stringify({
       preparedByName: editPreparedByName,
@@ -175,13 +207,28 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
       approvedByTitle: editApprovedByTitle,
       approvedDate: editApprovedDate
     });
-    if (currentApprovalsJson !== (selectedProject.approvals || "")) return true;
+    let dbApprovalsJson = selectedProject.approvals || "";
+    if (!dbApprovalsJson) {
+      dbApprovalsJson = JSON.stringify({
+        preparedByName: "",
+        preparedByTitle: "Lead Auditor",
+        preparedDate: "",
+        approvedByName: "",
+        approvedByTitle: "Head of Department",
+        approvedDate: ""
+      });
+    } else {
+      try {
+        dbApprovalsJson = JSON.stringify(JSON.parse(dbApprovalsJson));
+      } catch {}
+    }
+    if (currentApprovalsJson !== dbApprovalsJson) return true;
     
-    const prevAuditors = selectedProject.auditorIds || [];
-    if (editAuditorIds.length !== prevAuditors.length || !editAuditorIds.every(id => prevAuditors.includes(id))) return true;
+    const prevAuditors = selectedProject.auditorNames ? selectedProject.auditorNames.split(",").map(s => s.trim()).filter(Boolean) : [];
+    if (editAuditorIds.length !== prevAuditors.length || !editAuditorIds.every(name => prevAuditors.includes(name))) return true;
     
     const prevPics = selectedProject.deptPicIds ? selectedProject.deptPicIds.split(",").filter(Boolean) : [];
-    if (editDeptPicIds.length !== prevPics.length || !editDeptPicIds.every(id => prevPics.includes(id))) return true;
+    if (editDeptPicIds.length !== prevPics.length || !editDeptPicIds.every(name => prevPics.includes(name))) return true;
 
     return false;
   };
@@ -207,7 +254,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     
     // Set custom SQLite integrations
     setEditWorkflowStage(proj.workflowStage || "DRAFTING");
-    setEditAuditorIds(proj.auditorIds || []);
+    setEditAuditorIds(proj.auditorNames ? proj.auditorNames.split(",").map(s => s.trim()).filter(Boolean) : []);
     setEditDeptPicIds(proj.deptPicIds ? proj.deptPicIds.split(",").filter(Boolean) : []);
     setEditAttachments(proj.attachments || []);
 
@@ -289,6 +336,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
         workflowStage: editWorkflowStage,
         deptPicIds: editDeptPicIds.join(","),
         auditorIds: editAuditorIds,
+        auditorNames: editAuditorIds.join(","),
         objectives: editObjectives,
         riskProcess: editRiskProcess,
         riskClass: editRiskClass,
@@ -343,6 +391,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
         workflowStage: editWorkflowStage,
         deptPicIds: editDeptPicIds.join(","),
         auditorIds: editAuditorIds,
+        auditorNames: editAuditorIds.join(","),
         objectives: editObjectives,
         riskProcess: editRiskProcess,
         riskClass: editRiskClass,
@@ -677,17 +726,26 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                 return (
                   <tr 
                     key={proj.id}
-                    onClick={() => openProjectEditor(proj)}
-                    className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors cursor-pointer select-none"
+                    onClick={() => setSelectedProjectId(proj.id === selectedProjectId ? "" : proj.id)}
+                    className={`hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors select-none cursor-pointer ${
+                      proj.id === selectedProjectId ? "bg-slate-100/80 dark:bg-slate-800/50 font-medium" : ""
+                    }`}
                   >
                     <td className="px-6 py-4 font-mono text-slate-800 dark:text-slate-200">
                       {proj.code}
                     </td>
-                    <td className="px-6 py-4 text-[#0066cc] font-medium hover:underline">
+                    <td 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedProjectId(proj.id);
+                        openProjectEditor(proj);
+                      }}
+                      className="px-6 py-4 text-[#0066cc] font-medium hover:underline cursor-pointer"
+                    >
                       {proj.name}
                     </td>
                     <td className="px-6 py-4 text-slate-500">
-                      {users.find(u => u.id === proj.leadAuditorId)?.name || "Unassigned"}
+                      {users.find(u => u.id === proj.leadAuditorId)?.name || proj.leadAuditorId || "Unassigned"}
                     </td>
                     <td className="px-6 py-4 text-slate-500">
                       {proj.startDate}
@@ -887,63 +945,34 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   <div className="space-y-4">
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-mono font-bold uppercase text-slate-500">Lead Auditor</label>
-                      <select
-                        value={editLead}
-                        onChange={(e) => setEditLead(e.target.value)}
-                        className="w-full bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs focus:outline-none cursor-pointer text-slate-800 dark:text-slate-200"
-                      >
-                        <option value="" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">Select Lead...</option>
-                        {leadAuditors.map((u) => (
-                          <option key={u.id} value={u.id} className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">
-                            {u.name}
-                          </option>
-                        ))}
-                      </select>
+                      <MultiSelect
+                        selectedValues={editLead ? editLead.split(",").map(s => s.trim()).filter(Boolean) : []}
+                        onChange={(values) => setEditLead(values.join(", "))}
+                        options={users
+                          .filter(u => u.role === "LEAD_AUDITOR" || u.role === "ADMIN")
+                          .map(u => ({
+                            value: u.name,
+                            label: u.name,
+                            subLabel: `${u.role.replace("_", " ")}${u.email ? ` • ${u.email}` : ""}`
+                          }))}
+                        placeholder="Select Lead Auditors..."
+                      />
                     </div>
 
                     <div className="space-y-2 relative">
                       <label className="text-xs font-mono font-bold uppercase text-slate-500">Auditors</label>
-                      
-                      {/* Selection badges */}
-                      <div className="flex flex-wrap gap-1">
-                        {editAuditorIds.map(userId => {
-                          const u = users.find(x => x.id === userId);
-                          return u ? (
-                            <span key={userId} className="inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] px-2 py-0.5 rounded text-slate-800 dark:text-slate-200 font-semibold">
-                              {u.name}
-                              <button type="button" onClick={() => removeAuditor(userId)} className="text-slate-400 hover:text-red-500 font-bold">&times;</button>
-                            </span>
-                          ) : null;
-                        })}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsAuditorDropdownOpen(!isAuditorDropdownOpen);
-                          setIsPicDropdownOpen(false);
-                        }}
-                        className="w-full text-left bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 flex items-center justify-between cursor-pointer"
-                      >
-                        <span>Select Auditors...</span>
-                        <UserPlus className="w-3.5 h-3.5 text-slate-400" />
-                      </button>
-
-                      {isAuditorDropdownOpen && (
-                        <div className="absolute z-25 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded shadow-lg p-2 space-y-1">
-                          {users.map(u => (
-                            <label key={u.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-150 dark:hover:bg-slate-800 rounded cursor-pointer text-[11px] text-slate-800 dark:text-slate-200">
-                              <input
-                                type="checkbox"
-                                checked={editAuditorIds.includes(u.id)}
-                                onChange={() => toggleAuditor(u.id)}
-                                className="rounded border-slate-300 dark:border-slate-700 text-[#0066cc] cursor-pointer"
-                              />
-                              {u.name} ({u.role === "LEAD_AUDITOR" ? "Lead" : u.role === "AUDITOR" ? "Auditor" : "Auditee"})
-                            </label>
-                          ))}
-                        </div>
-                      )}
+                      <MultiSelect
+                        selectedValues={editAuditorIds}
+                        onChange={(values) => setEditAuditorIds(values)}
+                        options={users
+                          .filter(u => u.role === "ADMIN" || u.role === "LEAD_AUDITOR" || u.role === "AUDITOR")
+                          .map(u => ({
+                            value: u.name,
+                            label: u.name,
+                            subLabel: `${u.role.replace("_", " ")}${u.email ? ` • ${u.email}` : ""}`
+                          }))}
+                        placeholder="Select Auditors..."
+                      />
                     </div>
                   </div>
 
@@ -951,47 +980,16 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   <div className="space-y-4 relative">
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-mono font-bold uppercase text-slate-500">Department PIC</label>
-                      
-                      {/* Selection badges */}
-                      <div className="flex flex-wrap gap-1 mb-1">
-                        {editDeptPicIds.map(userId => {
-                          const u = users.find(x => x.id === userId);
-                          return u ? (
-                            <span key={userId} className="inline-flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-[10px] px-2 py-0.5 rounded text-slate-800 dark:text-slate-200 font-semibold">
-                              {u.name}
-                              <button type="button" onClick={() => removePic(userId)} className="text-slate-400 hover:text-red-500 font-bold">&times;</button>
-                            </span>
-                          ) : null;
-                        })}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsPicDropdownOpen(!isPicDropdownOpen);
-                          setIsAuditorDropdownOpen(false);
-                        }}
-                        className="w-full text-left bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs text-slate-500 flex items-center justify-between cursor-pointer"
-                      >
-                        <span>Select PICs...</span>
-                        <Users className="w-3.5 h-3.5 text-slate-400" />
-                      </button>
-
-                      {isPicDropdownOpen && (
-                        <div className="absolute z-25 left-0 right-0 mt-1 max-h-48 overflow-y-auto bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded shadow-lg p-2 space-y-1">
-                          {users.map(u => (
-                            <label key={u.id} className="flex items-center gap-2 px-2 py-1.5 hover:bg-slate-155 dark:hover:bg-slate-800 rounded cursor-pointer text-[11px] text-slate-800 dark:text-slate-200">
-                              <input
-                                type="checkbox"
-                                checked={editDeptPicIds.includes(u.id)}
-                                onChange={() => togglePic(u.id)}
-                                className="rounded border-slate-300 dark:border-slate-700 text-[#0066cc] cursor-pointer"
-                              />
-                              {u.name} ({u.role === "AUDITEE" ? "Auditee" : u.role})
-                            </label>
-                          ))}
-                        </div>
-                      )}
+                      <MultiSelect
+                        selectedValues={editDeptPicIds}
+                        onChange={(values) => setEditDeptPicIds(values)}
+                        options={users.map(u => ({
+                          value: u.name,
+                          label: u.name,
+                          subLabel: `${u.role.replace("_", " ")}${u.email ? ` • ${u.email}` : ""}`
+                        }))}
+                        placeholder="Select PICs..."
+                      />
                     </div>
                   </div>
                 </div>

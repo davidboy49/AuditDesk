@@ -57,6 +57,7 @@ export interface AuditProject {
   approvals: string;
 
   auditorIds?: string[]; // Array of selected auditor user IDs
+  auditorNames?: string;
   attachments?: Attachment[];
 }
 

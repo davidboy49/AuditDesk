@@ -127,6 +127,7 @@ export const dbService = {
       startDate: p.startDate.toISOString().split("T")[0],
       endDate: p.endDate.toISOString().split("T")[0],
       leadAuditorId: p.leadAuditorId,
+      auditorNames: p.auditorNames,
       objectives: p.objectives,
       riskProcess: p.riskProcess,
       riskClass: p.riskClass,
@@ -160,6 +161,7 @@ export const dbService = {
         startDate: new Date(startDate),
         endDate: new Date(endDate),
         leadAuditorId,
+        auditorNames: "",
         workflowStage: "DRAFTING",
         deptPicIds: "",
         objectives: "<p>Ensure operational controls conform to local regulatory parameters, and technical data pathways remain uncompromised.</p>",
@@ -190,6 +192,7 @@ export const dbService = {
       startDate: p.startDate.toISOString().split("T")[0],
       endDate: p.endDate.toISOString().split("T")[0],
       leadAuditorId: p.leadAuditorId,
+      auditorNames: p.auditorNames,
       objectives: p.objectives,
       riskProcess: p.riskProcess,
       riskClass: p.riskClass,
@@ -205,9 +208,20 @@ export const dbService = {
     };
   },
   async updateProject(id: string, updates: Partial<AuditProject>): Promise<AuditProject | null> {
-    const auditorConnections = updates.auditorIds ? {
-      set: updates.auditorIds.map(audId => ({ id: audId }))
-    } : undefined;
+    let auditorConnections = undefined;
+    if (updates.auditorIds) {
+      const validUsers = await prisma.user.findMany({
+        where: {
+          OR: [
+            { id: { in: updates.auditorIds } },
+            { name: { in: updates.auditorIds } }
+          ]
+        }
+      });
+      auditorConnections = {
+        set: validUsers.map(u => ({ id: u.id }))
+      };
+    }
 
     const p = await prisma.auditProject.update({
       where: { id },
@@ -221,6 +235,7 @@ export const dbService = {
         startDate: updates.startDate ? new Date(updates.startDate) : undefined,
         endDate: updates.endDate ? new Date(updates.endDate) : undefined,
         leadAuditorId: updates.leadAuditorId,
+        auditorNames: updates.auditorNames,
         objectives: updates.objectives,
         riskProcess: updates.riskProcess,
         riskClass: updates.riskClass,
@@ -250,6 +265,7 @@ export const dbService = {
       startDate: p.startDate.toISOString().split("T")[0],
       endDate: p.endDate.toISOString().split("T")[0],
       leadAuditorId: p.leadAuditorId,
+      auditorNames: p.auditorNames,
       objectives: p.objectives,
       riskProcess: p.riskProcess,
       riskClass: p.riskClass,
@@ -452,6 +468,11 @@ export const dbService = {
       updatedAt: s.updatedAt.toISOString()
     };
   },
+  async getExecutionSchedule(id: string): Promise<any> {
+    return prisma.executionSchedule.findUnique({
+      where: { id }
+    });
+  },
   async updateExecutionSchedule(id: string, data: Partial<{
     organization: string;
     address: string;
@@ -498,6 +519,28 @@ export const dbService = {
   },
   async deleteExecutionSchedule(id: string): Promise<boolean> {
     await prisma.executionSchedule.delete({
+      where: { id }
+    });
+    return true;
+  },
+  async createActivityLog(data: {
+    userId: string;
+    userEmail: string;
+    userName: string;
+    action: string;
+    details: string;
+  }): Promise<any> {
+    return prisma.activityLog.create({
+      data
+    });
+  },
+  async getActivityLogs(): Promise<any[]> {
+    return prisma.activityLog.findMany({
+      orderBy: { createdAt: "desc" }
+    });
+  },
+  async deleteActivityLog(id: string): Promise<boolean> {
+    await prisma.activityLog.delete({
       where: { id }
     });
     return true;

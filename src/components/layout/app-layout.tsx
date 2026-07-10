@@ -12,12 +12,14 @@ import {
   Sun, 
   Moon,
   ChevronRight,
+  ChevronDown,
   Menu,
   Bell,
   User as UserIcon,
   Lock,
   Building,
-  CalendarCheck
+  CalendarCheck,
+  History
 } from "lucide-react";
 import { mockUsers, User } from "@/lib/mockData";
 
@@ -32,6 +34,7 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
   const [theme, setTheme] = useState<"light" | "dark">("light"); // Default light just like screenshot
   const [activeUser, setActiveUser] = useState<User>(currentUser);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [auditModuleOpen, setAuditModuleOpen] = useState(true);
 
   // Initialize theme from localStorage or document class
   useEffect(() => {
@@ -74,12 +77,17 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
     { name: "User Management", href: "/users", icon: Users },
   ];
 
+  if (activeUser.role === "ADMIN") {
+    menuItems.push({ name: "Activity Logs", href: "/logs", icon: History });
+  }
+
   // Dynamic breadcrumb matching screenshot structure
   const getBreadcrumb = () => {
     if (pathname.startsWith("/planning")) return "Scoping / Timeline Planning";
     if (pathname.startsWith("/schedule")) return "Execution / Execution Schedule & Document Request";
     if (pathname.startsWith("/findings")) return "Mitigation / Findings Ledger";
     if (pathname.startsWith("/users")) return "Identity / User Management";
+    if (pathname.startsWith("/logs")) return "Administration / Activity Logs";
     return "Portal / Dashboard";
   };
 
@@ -118,30 +126,54 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
             </div>
           </div>
 
-          {/* Navigation Links with Right chevron arrows */}
+          {/* Navigation Links with nesting */}
           <nav className="py-4 space-y-1">
-            {menuItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = pathname.startsWith(item.href) || (item.href === "/dashboard" && pathname === "/");
-              
-              return (
-                <Link
-                  key={item.name}
-                  href={item.href}
-                  className={`flex items-center justify-between px-5 py-3 text-xs font-semibold transition-all select-none border-l-4 ${
-                    isActive
-                      ? "bg-[#052b49] text-white border-accent"
-                      : "text-slate-300 hover:bg-[#053254]/50 hover:text-white border-transparent"
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <Icon className="w-4 h-4 text-slate-300" />
-                    <span>{item.name}</span>
-                  </div>
-                  <ChevronRight className="w-3 h-3 text-slate-400" />
-                </Link>
-              );
-            })}
+            {/* Audit Module Collapsible Parent */}
+            <div>
+              <button
+                type="button"
+                onClick={() => setAuditModuleOpen(!auditModuleOpen)}
+                className="w-full flex items-center justify-between px-5 py-3 text-xs font-bold text-white hover:bg-[#053254]/50 transition-all select-none cursor-pointer"
+              >
+                <div className="flex items-center gap-3">
+                  <Building className="w-4 h-4 text-slate-300" />
+                  <span className="uppercase tracking-wider">Audit Module</span>
+                </div>
+                <ChevronDown className={`w-3.5 h-3.5 text-slate-400 transition-transform duration-200 ${auditModuleOpen ? "" : "-rotate-90"}`} />
+              </button>
+
+              {/* Nested Child Items */}
+              <div 
+                className={`transition-all duration-300 overflow-hidden ${
+                  auditModuleOpen ? "max-h-[500px] opacity-100" : "max-h-0 opacity-0"
+                }`}
+              >
+                <div className="pl-4 border-l border-[#042844] ml-7 my-1 space-y-1">
+                  {menuItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = pathname.startsWith(item.href) || (item.href === "/dashboard" && pathname === "/");
+                    
+                    return (
+                      <Link
+                        key={item.name}
+                        href={item.href}
+                        className={`flex items-center justify-between px-4 py-2.5 text-[11px] font-semibold transition-all select-none rounded ${
+                          isActive
+                            ? "bg-[#052b49] text-white font-bold border-l-2 border-accent pl-3"
+                            : "text-slate-300 hover:bg-[#053254]/30 hover:text-white"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Icon className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>{item.name}</span>
+                        </div>
+                        <ChevronRight className="w-2.5 h-2.5 text-slate-500" />
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
           </nav>
         </div>
 
