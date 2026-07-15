@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import { User, Department, UserGroup } from "@/lib/mockData";
 import { 
-  createDepartmentAction, 
   createUserGroupAction, 
   updateUserGroupAndDeptAction, 
   getUsersAction,
@@ -42,16 +41,11 @@ export default function UsersClient({
   const [departments, setDepartments] = useState<Department[]>(initialDepartments);
   const [userGroups, setUserGroups] = useState<UserGroup[]>(initialUserGroups);
   
-  // Tab toggle: "departments" or "usergroups"
-  const [activeTab, setActiveTab] = useState<"departments" | "usergroups">("departments");
-
   // Search/Filter states
   const [searchQuery, setSearchQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState("ALL");
 
   // Form states
-  const [newDeptName, setNewDeptName] = useState("");
-  const [newDeptDesc, setNewDeptDesc] = useState("");
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDesc, setNewGroupDesc] = useState("");
   
@@ -71,23 +65,6 @@ export default function UsersClient({
   const canManage = RBAC.canManageUsers(currentUser);
 
   // Assignment handlers
-  const handleAssignDepartment = async (userId: string, deptId: string | null) => {
-    const user = users.find(u => u.id === userId);
-    if (!user) return;
-    
-    const updated = await updateUserGroupAndDeptAction(
-      userId, 
-      deptId || null, 
-      user.groupId
-    );
-    
-    if (updated) {
-      const freshUsers = await getUsersAction();
-      setUsers(freshUsers);
-      showFeedback(`Updated department for ${user.name}`);
-    }
-  };
-
   const handleAssignGroup = async (userId: string, groupId: string | null) => {
     const user = users.find(u => u.id === userId);
     if (!user) return;
@@ -194,16 +171,6 @@ export default function UsersClient({
     }
   };
 
-  const handleCreateDept = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newDeptName) return;
-    
-    const newDept = await createDepartmentAction(newDeptName, newDeptDesc);
-    setDepartments([...departments, newDept]);
-    setNewDeptName("");
-    setNewDeptDesc("");
-    showFeedback(`Department "${newDept.name}" construction saved`);
-  };
 
   const handleCreateGroup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -318,25 +285,9 @@ export default function UsersClient({
                           {u.role.replace("_", " ")}
                         </td>
                         <td className="px-6 py-4.5">
-                          {canManage ? (
-                            <select
-                              value={u.departmentId || ""}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => handleAssignDepartment(u.id, e.target.value || null)}
-                              className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 text-xs rounded px-2 py-1 focus:outline-none cursor-pointer text-slate-700 dark:text-slate-300"
-                            >
-                              <option value="">No Department</option>
-                              {departments.map((d) => (
-                                <option key={d.id} value={d.id}>
-                                  {d.name}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <span className="font-semibold text-slate-700 dark:text-slate-300">
-                              {u.departmentName || <span className="text-slate-400 font-normal italic">Unassigned</span>}
-                            </span>
-                          )}
+                          <span className="font-semibold text-slate-700 dark:text-slate-300">
+                            {u.departmentName || <span className="text-slate-400 font-normal italic">Unassigned</span>}
+                          </span>
                         </td>
                         <td className="px-6 py-4.5">
                           {canManage ? (
@@ -373,155 +324,63 @@ export default function UsersClient({
         <div className="space-y-6">
           <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm p-5 space-y-6">
             
-            {/* Tabs */}
-            <div className="flex border-b border-slate-200 dark:border-slate-800 text-xs font-mono">
-              <button
-                onClick={() => setActiveTab("departments")}
-                className={`flex-1 pb-3 text-center border-b-2 font-bold uppercase transition-all select-none cursor-pointer ${
-                  activeTab === "departments" 
-                    ? "border-[#05375c] text-[#05375c] dark:border-accent dark:text-accent" 
-                    : "border-transparent text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
-                }`}
-              >
-                Departments
-              </button>
-              <button
-                onClick={() => setActiveTab("usergroups")}
-                className={`flex-1 pb-3 text-center border-b-2 font-bold uppercase transition-all select-none cursor-pointer ${
-                  activeTab === "usergroups" 
-                    ? "border-[#05375c] text-[#05375c] dark:border-accent dark:text-accent" 
-                    : "border-transparent text-slate-400 hover:text-slate-700 dark:hover:text-slate-300"
-                }`}
-              >
-                User Groups
-              </button>
+            <div className="space-y-6">
+              {/* List */}
+              <div className="space-y-3">
+                <h3 className="text-[10px] font-mono uppercase text-slate-400 font-bold">Group Registers</h3>
+                <div className="space-y-2">
+                  {userGroups.map((group) => (
+                    <div key={group.id} className="p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-850 rounded-md space-y-1">
+                      <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800 dark:text-slate-200">
+                        <Users className="w-3.5 h-3.5 text-[#05375c] dark:text-accent" /> {group.name}
+                      </div>
+                      <p className="text-[10px] text-slate-500">{group.description || "No description provided."}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Create Form */}
+              {canManage ? (
+                <form onSubmit={handleCreateGroup} className="space-y-3 border-t border-slate-100 dark:border-slate-800 pt-4 animate-fade-in">
+                  <h3 className="text-[10px] font-mono uppercase text-slate-400 font-bold">Add New User Group</h3>
+                  
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono text-slate-400 uppercase font-semibold">Group Name</label>
+                    <input
+                      type="text"
+                      required
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      placeholder="e.g. Risk Oversight Panel"
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-mono text-slate-400 uppercase font-semibold">Description</label>
+                    <textarea
+                      value={newGroupDesc}
+                      onChange={(e) => setNewGroupDesc(e.target.value)}
+                      placeholder="Describe group goals..."
+                      className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent h-16 resize-none"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full flex items-center justify-center gap-1 bg-[#05375c] text-white font-semibold text-xs py-2 rounded-md hover:bg-[#074776] transition-colors cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> Save User Group
+                  </button>
+                </form>
+              ) : (
+                <div className="flex gap-2 p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800/40 rounded text-[10px] text-slate-400 font-mono">
+                  <Lock className="w-4 h-4 shrink-0 text-slate-400" />
+                  <span>Lacks governance permission to create user groups.</span>
+                </div>
+              )}
             </div>
-
-            {/* Departments Tab */}
-            {activeTab === "departments" && (
-              <div className="space-y-6">
-                
-                {/* List */}
-                <div className="space-y-3">
-                  <h3 className="text-[10px] font-mono uppercase text-slate-400 font-bold">Department Registers</h3>
-                  <div className="space-y-2">
-                    {departments.map((dept) => (
-                      <div key={dept.id} className="p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-850 rounded-md space-y-1">
-                        <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800 dark:text-slate-200">
-                          <Building2 className="w-3.5 h-3.5 text-[#05375c] dark:text-accent" /> {dept.name}
-                        </div>
-                        <p className="text-[10px] text-slate-500">{dept.description || "No description provided."}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Create Form */}
-                {canManage ? (
-                  <form onSubmit={handleCreateDept} className="space-y-3 border-t border-slate-100 dark:border-slate-800 pt-4 animate-fade-in">
-                    <h3 className="text-[10px] font-mono uppercase text-slate-400 font-bold">Add New Department</h3>
-                    
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-mono text-slate-400 uppercase font-semibold">Department Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={newDeptName}
-                        onChange={(e) => setNewDeptName(e.target.value)}
-                        placeholder="e.g. Quality Assurance"
-                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-mono text-slate-400 uppercase font-semibold">Description</label>
-                      <textarea
-                        value={newDeptDesc}
-                        onChange={(e) => setNewDeptDesc(e.target.value)}
-                        placeholder="Describe department boundaries..."
-                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent h-16 resize-none"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="w-full flex items-center justify-center gap-1 bg-[#05375c] text-white font-semibold text-xs py-2 rounded-md hover:bg-[#074776] transition-colors cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Save Department
-                    </button>
-                  </form>
-                ) : (
-                  <div className="flex gap-2 p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800/40 rounded text-[10px] text-slate-400 font-mono">
-                    <Lock className="w-4 h-4 shrink-0 text-slate-400" />
-                    <span>Lacks governance permission to create departments.</span>
-                  </div>
-                )}
-
-              </div>
-            )}
-
-            {/* User Groups Tab */}
-            {activeTab === "usergroups" && (
-              <div className="space-y-6">
-                
-                {/* List */}
-                <div className="space-y-3">
-                  <h3 className="text-[10px] font-mono uppercase text-slate-400 font-bold">Group Registers</h3>
-                  <div className="space-y-2">
-                    {userGroups.map((group) => (
-                      <div key={group.id} className="p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-850 rounded-md space-y-1">
-                        <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800 dark:text-slate-200">
-                          <Users className="w-3.5 h-3.5 text-[#05375c] dark:text-accent" /> {group.name}
-                        </div>
-                        <p className="text-[10px] text-slate-500">{group.description || "No description provided."}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Create Form */}
-                {canManage ? (
-                  <form onSubmit={handleCreateGroup} className="space-y-3 border-t border-slate-100 dark:border-slate-800 pt-4 animate-fade-in">
-                    <h3 className="text-[10px] font-mono uppercase text-slate-400 font-bold">Add New User Group</h3>
-                    
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-mono text-slate-400 uppercase font-semibold">Group Name</label>
-                      <input
-                        type="text"
-                        required
-                        value={newGroupName}
-                        onChange={(e) => setNewGroupName(e.target.value)}
-                        placeholder="e.g. Risk Oversight Panel"
-                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent"
-                      />
-                    </div>
-
-                    <div className="space-y-1">
-                      <label className="text-[9px] font-mono text-slate-400 uppercase font-semibold">Description</label>
-                      <textarea
-                        value={newGroupDesc}
-                        onChange={(e) => setNewGroupDesc(e.target.value)}
-                        placeholder="Describe group goals..."
-                        className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-accent h-16 resize-none"
-                      />
-                    </div>
-
-                    <button
-                      type="submit"
-                      className="w-full flex items-center justify-center gap-1 bg-[#05375c] text-white font-semibold text-xs py-2 rounded-md hover:bg-[#074776] transition-colors cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Save User Group
-                    </button>
-                  </form>
-                ) : (
-                  <div className="flex gap-2 p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800/40 rounded text-[10px] text-slate-400 font-mono">
-                    <Lock className="w-4 h-4 shrink-0 text-slate-400" />
-                    <span>Lacks governance permission to create user groups.</span>
-                  </div>
-                )}
-
-              </div>
-            )}
 
           </div>
         </div>

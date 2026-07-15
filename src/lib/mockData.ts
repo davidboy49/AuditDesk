@@ -35,7 +35,7 @@ export interface AuditProject {
   id: string;
   name: string;
   code: string;
-  status: "PLANNING" | "IN_PROGRESS" | "REPORTING" | "ARCHIVED";
+  status: "PLANNING" | "SUBMITTED_FOR_APPROVAL" | "RELEASED";
   workflowStage: "DRAFTING" | "REVIEW" | "PENDING_PIC" | "APPROVED";
   deptPicIds: string; // Comma-separated list of User IDs representing department PICs
   scope: string;
@@ -59,6 +59,8 @@ export interface AuditProject {
   auditorIds?: string[]; // Array of selected auditor user IDs
   auditorNames?: string;
   attachments?: Attachment[];
+  findings?: { id: string; title: string; status: string }[];
+  executionSchedules?: { id: string; visitNumber: string; language: string; organization: string; ownerName?: string; lastModifiedBy?: string }[];
 }
 
 export interface Finding {
@@ -82,6 +84,12 @@ export interface ScheduleRow {
   activity: string;
   conductBy: string;
   pIncharge: string;
+  implication?: string;
+  recommendation?: string;
+  correctiveActionDate?: string;
+  correctiveActionRemarks?: string;
+  correctiveFinalDate?: string;
+  correctiveFinalRemarks?: string;
 }
 
 export interface ExecutionSchedule {
@@ -102,6 +110,8 @@ export interface ExecutionSchedule {
   objectives: string;
   scope: string;
   scheduleRows: string; // JSON
+  ownerName?: string;
+  lastModifiedBy?: string;
   createdAt?: string;
   updatedAt?: string;
 }

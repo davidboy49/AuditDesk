@@ -28,9 +28,10 @@ interface RichEditorProps {
   onChange: (value: string) => void;
   placeholder?: string;
   editorClassName?: string;
+  editable?: boolean;
 }
 
-export default function RichEditor({ value, onChange, placeholder = "Start typing...", editorClassName }: RichEditorProps) {
+export default function RichEditor({ value, onChange, placeholder = "Start typing...", editorClassName, editable = true }: RichEditorProps) {
   const editor = useEditor({
     extensions: [
       StarterKit.configure({
@@ -47,12 +48,13 @@ export default function RichEditor({ value, onChange, placeholder = "Start typin
       TableCell,
     ],
     content: value,
+    editable: editable,
     onUpdate: ({ editor }) => {
       onChange(editor.getHTML());
     },
     editorProps: {
       attributes: {
-        class: `prose prose-sm dark:prose-invert focus:outline-none ${editorClassName || "min-h-[200px] max-h-[500px]"} overflow-y-auto px-4 py-3 bg-card border-t border-border rounded-b-md text-foreground`,
+        class: `prose prose-sm dark:prose-invert focus:outline-none ${editorClassName || "min-h-[200px] max-h-[500px]"} overflow-y-auto px-4 py-3 bg-card text-foreground ${editable ? "border-t border-border rounded-b-md" : "rounded-md border border-border/40"}`,
       },
     },
   });
@@ -63,6 +65,13 @@ export default function RichEditor({ value, onChange, placeholder = "Start typin
       editor.commands.setContent(value);
     }
   }, [value, editor]);
+
+  // Sync editable state
+  useEffect(() => {
+    if (editor && editable !== undefined) {
+      editor.setEditable(editable);
+    }
+  }, [editable, editor]);
 
   if (!editor) {
     return (
@@ -75,9 +84,10 @@ export default function RichEditor({ value, onChange, placeholder = "Start typin
   };
 
   return (
-    <div className="w-full border border-border rounded-md bg-card flex flex-col focus-within:ring-1 focus-within:ring-ring focus-within:border-ring overflow-hidden">
+    <div className={`w-full border rounded-md bg-card flex flex-col overflow-hidden ${editable ? "border-border focus-within:ring-1 focus-within:ring-ring focus-within:border-ring" : "border-border/40"}`}>
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-1 p-2 bg-muted/40 border-b border-border text-muted-foreground select-none">
+      {editable && (
+        <div className="flex flex-wrap items-center gap-1 p-2 bg-muted/40 border-b border-border text-muted-foreground select-none">
         {/* Text formatting */}
         <button
           type="button"
@@ -212,6 +222,7 @@ export default function RichEditor({ value, onChange, placeholder = "Start typin
           <Redo className="w-4 h-4" />
         </button>
       </div>
+      )}
 
       {/* Editor Content Area */}
       <EditorContent editor={editor} />

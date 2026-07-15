@@ -8,10 +8,26 @@ export const dbService = {
       orderBy: { name: "asc" }
     });
   },
-  async createDepartment(name: string, description: string): Promise<Department> {
+  async createDepartment(id: string, name: string, description: string): Promise<Department> {
     return prisma.department.create({
+      data: { id, name, description }
+    });
+  },
+  async updateDepartment(id: string, name: string, description: string): Promise<Department> {
+    return prisma.department.update({
+      where: { id },
       data: { name, description }
     });
+  },
+  async deleteDepartment(id: string): Promise<boolean> {
+    await prisma.user.updateMany({
+      where: { departmentId: id },
+      data: { departmentId: null }
+    });
+    await prisma.department.delete({
+      where: { id }
+    });
+    return true;
   },
 
   // Groups
@@ -111,7 +127,9 @@ export const dbService = {
     const projects = await prisma.auditProject.findMany({
       include: {
         auditors: true,
-        attachments: true
+        attachments: true,
+        findings: true,
+        executionSchedules: true
       },
       orderBy: { code: "asc" }
     });
@@ -139,6 +157,15 @@ export const dbService = {
       opExTimeline: p.opExTimeline,
       approvals: p.approvals,
       auditorIds: p.auditors.map(a => a.id),
+      findings: p.findings.map(f => ({ id: f.id, title: f.title, status: f.status })),
+      executionSchedules: p.executionSchedules.map(e => ({
+        id: e.id,
+        visitNumber: e.visitNumber,
+        language: e.language,
+        organization: e.organization,
+        ownerName: e.ownerName,
+        lastModifiedBy: e.lastModifiedBy
+      })),
       attachments: p.attachments.map(a => ({
         id: a.id,
         fileName: a.fileName,
@@ -288,6 +315,17 @@ export const dbService = {
       }))
     };
   },
+  async deleteProject(id: string): Promise<boolean> {
+    try {
+      await prisma.auditProject.delete({
+        where: { id }
+      });
+      return true;
+    } catch (e) {
+      console.error("Failed to delete project:", e);
+      return false;
+    }
+  },
 
   // Findings
   async getFindings(): Promise<Finding[]> {
@@ -365,6 +403,29 @@ export const dbService = {
       createdAt: f.createdAt.toISOString()
     };
   },
+  async updateFinding(id: string, updates: { title?: string; description?: string; severity?: any; status?: any; recommendation?: string }): Promise<Finding | null> {
+    const f = await prisma.finding.update({
+      where: { id },
+      data: updates,
+      include: {
+        project: true,
+        auditor: true
+      }
+    });
+    return {
+      id: f.id,
+      title: f.title,
+      description: f.description,
+      status: f.status as any,
+      severity: f.severity as any,
+      recommendation: f.recommendation,
+      projectId: f.projectId,
+      projectName: f.project.name,
+      auditorId: f.auditorId,
+      auditorName: f.auditor.name,
+      createdAt: f.createdAt.toISOString()
+    };
+  },
 
   // Attachments
   async addAttachment(projectId: string, fileName: string, fileSize: number, fileType: string, fileData: string): Promise<Attachment> {
@@ -420,6 +481,8 @@ export const dbService = {
       objectives: s.objectives,
       scope: s.scope,
       scheduleRows: s.scheduleRows,
+      ownerName: s.ownerName,
+      lastModifiedBy: s.lastModifiedBy,
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString()
     }));
@@ -439,6 +502,8 @@ export const dbService = {
     objectives: string;
     scope: string;
     scheduleRows: string;
+    ownerName?: string;
+    lastModifiedBy?: string;
   }): Promise<any> {
     const s = await prisma.executionSchedule.create({
       data,
@@ -464,6 +529,8 @@ export const dbService = {
       objectives: s.objectives,
       scope: s.scope,
       scheduleRows: s.scheduleRows,
+      ownerName: s.ownerName,
+      lastModifiedBy: s.lastModifiedBy,
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString()
     };
@@ -487,6 +554,8 @@ export const dbService = {
     objectives: string;
     scope: string;
     scheduleRows: string;
+    ownerName: string;
+    lastModifiedBy: string;
   }>): Promise<any | null> {
     const s = await prisma.executionSchedule.update({
       where: { id },
@@ -513,6 +582,8 @@ export const dbService = {
       objectives: s.objectives,
       scope: s.scope,
       scheduleRows: s.scheduleRows,
+      ownerName: s.ownerName,
+      lastModifiedBy: s.lastModifiedBy,
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString()
     };

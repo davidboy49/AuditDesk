@@ -1,15 +1,15 @@
 import { dbService } from "@/lib/dbService";
 import { getCurrentUserServer } from "@/lib/auth";
-import FindingsClient from "./findings-client";
+import MeetingsClient from "./meetings-client";
 
-export default async function FindingsPage() {
+export default async function MeetingsPage() {
   const currentUser = await getCurrentUserServer();
   const projects = await dbService.getProjects();
   const schedules = await dbService.getExecutionSchedules();
   const users = await dbService.getUsers();
 
   return (
-    <FindingsClient
+    <MeetingsClient
       initialSchedules={schedules}
       projects={projects}
       users={users}

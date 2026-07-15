@@ -19,7 +19,8 @@ import {
   Lock,
   Building,
   CalendarCheck,
-  History
+  History,
+  MessageSquare
 } from "lucide-react";
 import { mockUsers, User } from "@/lib/mockData";
 
@@ -72,9 +73,11 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
   const menuItems = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Audit Planning", href: "/planning", icon: CalendarRange },
+    { name: "Open Meetings", href: "/meetings", icon: MessageSquare },
     { name: "Execution Schedule", href: "/schedule", icon: CalendarCheck },
     { name: "Audit Findings", href: "/findings", icon: AlertTriangle },
-    { name: "User Management", href: "/users", icon: Users },
+    { name: "User Groups", href: "/users", icon: Users },
+    { name: "Departments", href: "/departments", icon: Building },
   ];
 
   if (activeUser.role === "ADMIN") {
@@ -85,8 +88,10 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
   const getBreadcrumb = () => {
     if (pathname.startsWith("/planning")) return "Scoping / Timeline Planning";
     if (pathname.startsWith("/schedule")) return "Execution / Execution Schedule & Document Request";
+    if (pathname.startsWith("/meetings")) return "Collaboration / Open Meetings & Minutes";
     if (pathname.startsWith("/findings")) return "Mitigation / Findings Ledger";
     if (pathname.startsWith("/users")) return "Identity / User Management";
+    if (pathname.startsWith("/departments")) return "Identity / Department Management";
     if (pathname.startsWith("/logs")) return "Administration / Activity Logs";
     return "Portal / Dashboard";
   };

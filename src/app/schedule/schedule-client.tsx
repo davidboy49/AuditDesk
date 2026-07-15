@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Users, 
   Building, 
@@ -106,7 +106,7 @@ export default function ScheduleClient({
   users, 
   currentUser 
 }: ScheduleClientProps) {
-  const [schedules, setSchedules] = useState<ExecutionSchedule[]>(initialSchedules);
+  const [schedules, setSchedules] = useState<ExecutionSchedule[]>(initialSchedules.filter(s => s.language !== "finding" && s.language !== "meeting"));
   
   // Search/Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -228,15 +228,8 @@ export default function ScheduleClient({
       .join(", ") || "Kong Thida, Malyneth";
     setAdditionalAttendees(picNames);
 
-    // Stripping objectives/scope from HTML tags to text for plain textarea editing
-    const cleanHTML = (html: string) => {
-      if (typeof window === "undefined") return html;
-      const doc = new DOMParser().parseFromString(html, 'text/html');
-      return doc.body.textContent || "";
-    };
-    
-    setObjectives(cleanHTML(proj.objectives));
-    setScope(cleanHTML(proj.scope));
+    setObjectives(proj.objectives || "");
+    setScope(proj.scope || "");
 
     // Default template schedule rows matching word document "2. Schedule"
     setRows([
@@ -308,6 +301,22 @@ export default function ScheduleClient({
     setIsModalOpen(true);
   };
 
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const idParam = params.get("id");
+      if (idParam) {
+        const sched = schedules.find(s => s.id === idParam);
+        if (sched) {
+          setSelectedScheduleId(sched.id);
+          setTimeout(() => {
+            openEditModal(sched);
+          }, 100);
+        }
+      }
+    }
+  }, [schedules]);
+
   const handleSaveSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProjectId || !organization || !actualVisitDate) {
@@ -339,7 +348,7 @@ export default function ScheduleClient({
           showFeedback("Execution schedule generated successfully.");
           setIsModalOpen(false);
           const fresh = await getExecutionSchedulesAction();
-          setSchedules(fresh);
+          setSchedules(fresh.filter((s: any) => s.language !== "finding" && s.language !== "meeting"));
         }
       } else {
         if (!selectedScheduleId) return;
@@ -348,7 +357,7 @@ export default function ScheduleClient({
           showFeedback("Execution schedule changes updated.");
           setIsModalOpen(false);
           const fresh = await getExecutionSchedulesAction();
-          setSchedules(fresh);
+          setSchedules(fresh.filter((s: any) => s.language !== "finding" && s.language !== "meeting"));
         }
       }
     } catch (err: any) {
@@ -372,7 +381,7 @@ export default function ScheduleClient({
             showFeedback("Schedule removed from ledger.");
             setSelectedScheduleId(null);
             const fresh = await getExecutionSchedulesAction();
-            setSchedules(fresh);
+            setSchedules(fresh.filter((s: any) => s.language !== "finding" && s.language !== "meeting"));
           }
         } catch (err: any) {
           console.error(err);
@@ -820,12 +829,11 @@ export default function ScheduleClient({
                           OPE Objectives:
                         </td>
                         <td colSpan={3} className="px-4 py-3">
-                          <textarea 
+                          <RichEditor 
                             value={objectives}
-                            onChange={(e) => setObjectives(e.target.value)}
-                            rows={8}
-                            placeholder="- To assess whether policies..."
-                            className="w-full bg-transparent border-none p-0 text-xs focus:outline-none text-slate-800 dark:text-slate-100 leading-relaxed font-sans resize-y whitespace-pre-line"
+                            onChange={setObjectives}
+                            placeholder="To assess whether policies..."
+                            editorClassName="min-h-[160px] max-h-[300px]"
                           />
                         </td>
                       </tr>
@@ -836,12 +844,11 @@ export default function ScheduleClient({
                           OPE Scope:
                         </td>
                         <td colSpan={3} className="px-4 py-3">
-                          <textarea 
+                          <RichEditor 
                             value={scope}
-                            onChange={(e) => setScope(e.target.value)}
-                            rows={5}
-                            placeholder="- Work procedure (account revenue)..."
-                            className="w-full bg-transparent border-none p-0 text-xs focus:outline-none text-slate-800 dark:text-slate-100 leading-relaxed font-sans resize-y whitespace-pre-line"
+                            onChange={setScope}
+                            placeholder="Work procedure (account revenue)..."
+                            editorClassName="min-h-[120px] max-h-[250px]"
                           />
                         </td>
                       </tr>

@@ -28,10 +28,27 @@ export async function getActivityLogsAction(): Promise<any[]> {
   return dbService.getActivityLogs();
 }
 
-export async function createDepartmentAction(name: string, description: string): Promise<Department> {
-  const result = await dbService.createDepartment(name, description);
-  await logActivity("CREATE_DEPARTMENT", `Created department "${name}"`);
+export async function createDepartmentAction(id: string, name: string, description: string): Promise<Department> {
+  const result = await dbService.createDepartment(id, name, description);
+  await logActivity("CREATE_DEPARTMENT", `Created department "${id}" (${name})`);
   revalidatePath("/users");
+  revalidatePath("/departments");
+  return result;
+}
+
+export async function updateDepartmentAction(id: string, name: string, description: string): Promise<Department> {
+  const result = await dbService.updateDepartment(id, name, description);
+  await logActivity("UPDATE_DEPARTMENT", `Updated department "${id}" (${name})`);
+  revalidatePath("/users");
+  revalidatePath("/departments");
+  return result;
+}
+
+export async function deleteDepartmentAction(id: string): Promise<boolean> {
+  const result = await dbService.deleteDepartment(id);
+  await logActivity("DELETE_DEPARTMENT", `Deleted department "${id}"`);
+  revalidatePath("/users");
+  revalidatePath("/departments");
   return result;
 }
 
@@ -99,9 +116,28 @@ export async function createProjectAction(
   return result;
 }
 
+export async function deleteProjectAction(id: string): Promise<boolean> {
+  const result = await dbService.deleteProject(id);
+  await logActivity("DELETE_PROJECT", `Deleted project ID: ${id}`);
+  revalidatePath("/planning");
+  revalidatePath("/dashboard");
+  return result;
+}
+
 export async function updateFindingStatusAction(id: string, status: any): Promise<Finding | null> {
   const result = await dbService.updateFindingStatus(id, status);
   await logActivity("UPDATE_FINDING_STATUS", `Updated finding ID: ${id} status to ${status}`);
+  revalidatePath("/findings");
+  revalidatePath("/dashboard");
+  return result;
+}
+
+export async function updateFindingAction(
+  id: string, 
+  updates: { title?: string; description?: string; severity?: any; status?: any; recommendation?: string }
+): Promise<Finding | null> {
+  const result = await dbService.updateFinding(id, updates);
+  await logActivity("UPDATE_FINDING", `Updated finding ID: ${id}`);
   revalidatePath("/findings");
   revalidatePath("/dashboard");
   return result;
@@ -168,6 +204,8 @@ export async function createExecutionScheduleAction(data: {
   objectives: string;
   scope: string;
   scheduleRows: string;
+  ownerName?: string;
+  lastModifiedBy?: string;
 }): Promise<any> {
   const result = await dbService.createExecutionSchedule(data);
   await logActivity("CREATE_SCHEDULE", `Created execution schedule for project ID: ${data.projectId}`);
@@ -190,6 +228,8 @@ export async function updateExecutionScheduleAction(id: string, data: Partial<{
   objectives: string;
   scope: string;
   scheduleRows: string;
+  ownerName?: string;
+  lastModifiedBy?: string;
 }>): Promise<any | null> {
   const oldSchedule = await dbService.getExecutionSchedule(id);
   const result = await dbService.updateExecutionSchedule(id, data);

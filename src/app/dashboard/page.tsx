@@ -4,7 +4,6 @@ import { getCurrentUserServer } from "@/lib/auth";
 import { 
   Building2, 
   FolderLock, 
-  AlertOctagon, 
   ArrowRight,
   ShieldCheck
 } from "lucide-react";
@@ -13,18 +12,13 @@ import Link from "next/link";
 export default async function DashboardPage() {
   const user = await getCurrentUserServer();
   const projects = await dbService.getProjects();
-  const findings = await dbService.getFindings();
   const users = await dbService.getUsers();
   const departments = await dbService.getDepartments();
 
   // Metrics calculations
   const totalAudits = projects.length;
-  const activeAudits = projects.filter(p => p.status === "IN_PROGRESS").length;
+  const activeAudits = projects.filter(p => p.status === "RELEASED").length;
   const planningAudits = projects.filter(p => p.status === "PLANNING").length;
-  
-  const openFindings = findings.filter(f => f.status === "OPEN");
-  const criticalFindingsCount = openFindings.filter(f => f.severity === "CRITICAL").length;
-  const highFindingsCount = openFindings.filter(f => f.severity === "HIGH").length;
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -44,7 +38,7 @@ export default async function DashboardPage() {
       </div>
 
       {/* Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Stat 1 */}
         <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xs space-y-3">
           <div className="flex justify-between items-center">
@@ -62,34 +56,6 @@ export default async function DashboardPage() {
         {/* Stat 2 */}
         <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xs space-y-3">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Open Findings</span>
-            <AlertOctagon className="w-4 h-4 text-red-500" />
-          </div>
-          <div className="space-y-0.5">
-            <div className="text-2xl font-bold font-mono text-red-500">{openFindings.length}</div>
-            <div className="text-[10px] text-slate-400">
-              Requires immediate mitigation action
-            </div>
-          </div>
-        </div>
-
-        {/* Stat 3 */}
-        <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xs space-y-3">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Critical & High</span>
-            <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-          </div>
-          <div className="space-y-0.5">
-            <div className="text-2xl font-bold font-mono text-red-500">{criticalFindingsCount + highFindingsCount}</div>
-            <div className="text-[10px] text-slate-400">
-              {criticalFindingsCount} Critical, {highFindingsCount} High severity
-            </div>
-          </div>
-        </div>
-
-        {/* Stat 4 */}
-        <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xs space-y-3">
-          <div className="flex justify-between items-center">
             <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Monitored Depts</span>
             <Building2 className="w-4 h-4 text-slate-400" />
           </div>
@@ -102,107 +68,65 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      {/* Main Grid: Active Audits Table & Discovered Threat cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        
-        {/* Left 2 Cols: Active Audits Table matching screenshot layout */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm overflow-hidden">
-            <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-900">
-              <div className="space-y-0.5">
-                <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">Ongoing Audit Operations</h2>
-                <p className="text-[10px] text-slate-400">Current schedule and operational scoping status.</p>
-              </div>
-              <Link 
-                href="/planning" 
-                className="text-[10px] text-[#0066cc] hover:underline flex items-center gap-0.5 font-bold font-mono"
-              >
-                Go Scoping <ArrowRight className="w-3 h-3" />
-              </Link>
-            </div>
-
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-[11px]">
-                <thead className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 font-bold uppercase">
-                  <tr>
-                    <th className="px-5 py-3">Code</th>
-                    <th className="px-5 py-3">Project Name</th>
-                    <th className="px-5 py-3">Lead Auditor</th>
-                    <th className="px-5 py-3 text-right">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                  {projects.map((proj) => {
-                    let statusText = "Planning";
-                    let statusColor = "text-amber-500";
-                    if (proj.status === "IN_PROGRESS") {
-                      statusText = "Released";
-                      statusColor = "text-[#30b050]";
-                    } else if (proj.status === "REPORTING") {
-                      statusText = "Reporting";
-                      statusColor = "text-blue-500";
-                    }
-
-                    return (
-                      <tr key={proj.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
-                        <td className="px-5 py-3.5 font-mono text-slate-800 dark:text-slate-200">
-                          {proj.code}
-                        </td>
-                        <td className="px-5 py-3.5 text-[#0066cc] font-medium hover:underline">
-                          <Link href="/planning">{proj.name}</Link>
-                        </td>
-                        <td className="px-5 py-3.5 text-slate-500">
-                          {mockUsers.find(u => u.id === proj.leadAuditorId)?.name || "Unassigned"}
-                        </td>
-                        <td className={`px-5 py-3.5 text-right font-bold ${statusColor}`}>
-                          {statusText}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-
-        {/* Right 1 Col: Discovered threat cards list */}
-        <div className="space-y-4">
-          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm p-5 space-y-4">
+      {/* Main Grid: Active Audits Table */}
+      <div className="space-y-4">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm overflow-hidden">
+          <div className="p-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-white dark:bg-slate-900">
             <div className="space-y-0.5">
-              <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">Discovered Priorities</h2>
-              <p className="text-[10px] text-slate-400">Vulnerabilities demanding mitigation workflow sign-off.</p>
+              <h2 className="text-sm font-bold text-slate-800 dark:text-slate-100">Ongoing Audit Operations</h2>
+              <p className="text-[10px] text-slate-400">Current schedule and operational scoping status.</p>
             </div>
+            <Link 
+              href="/planning" 
+              className="text-[10px] text-[#0066cc] hover:underline flex items-center gap-0.5 font-bold font-mono"
+            >
+              Go Scoping <ArrowRight className="w-3 h-3" />
+            </Link>
+          </div>
 
-            <div className="space-y-3.5">
-              {openFindings.filter(f => f.severity === "CRITICAL" || f.severity === "HIGH").map((find) => (
-                <div key={find.id} className="p-3.5 bg-slate-50 dark:bg-slate-800/20 border border-slate-200 dark:border-slate-800/80 rounded-md space-y-2">
-                  <div className="flex justify-between items-center">
-                    <span className={`text-[8px] uppercase font-mono px-1.5 py-0.5 rounded font-bold border ${
-                      find.severity === "CRITICAL"
-                        ? "bg-red-500/10 border-red-500/20 text-red-500"
-                        : "bg-orange-500/10 border-orange-500/20 text-orange-500"
-                    }`}>
-                      {find.severity}
-                    </span>
-                    <span className="text-[9px] font-mono text-slate-400">
-                      {find.createdAt.split('T')[0]}
-                    </span>
-                  </div>
-                  <h4 className="font-bold text-xs text-slate-800 dark:text-slate-200 line-clamp-1">{find.title}</h4>
-                  <p className="text-[10px] text-slate-500 line-clamp-2" dangerouslySetInnerHTML={{ __html: find.description }} />
-                  <div className="pt-2 border-t border-slate-150 dark:border-slate-800/50 flex justify-between items-center text-[9px] text-slate-400 font-mono">
-                    <span>In: {find.projectName}</span>
-                    <Link href="/findings" className="text-[#0066cc] hover:underline flex items-center gap-0.5 font-bold">
-                      Review <ArrowRight className="w-2.5 h-2.5" />
-                    </Link>
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[11px]">
+              <thead className="bg-slate-50 dark:bg-slate-900/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 font-bold uppercase">
+                <tr>
+                  <th className="px-5 py-3">Code</th>
+                  <th className="px-5 py-3">Project Name</th>
+                  <th className="px-5 py-3">Lead Auditor</th>
+                  <th className="px-5 py-3 text-right">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
+                {projects.map((proj) => {
+                  let statusText = "Planning";
+                  let statusColor = "text-amber-500";
+                  if (proj.status === "RELEASED") {
+                    statusText = "Released";
+                    statusColor = "text-[#30b050]";
+                  } else if (proj.status === "SUBMITTED_FOR_APPROVAL") {
+                    statusText = "Submitted for Approval";
+                    statusColor = "text-blue-500";
+                  }
+
+                  return (
+                    <tr key={proj.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
+                      <td className="px-5 py-3.5 font-mono text-slate-800 dark:text-slate-200">
+                        {proj.code}
+                      </td>
+                      <td className="px-5 py-3.5 text-[#0066cc] font-medium hover:underline">
+                        <Link href="/planning">{proj.name}</Link>
+                      </td>
+                      <td className="px-5 py-3.5 text-slate-500">
+                        {mockUsers.find(u => u.id === proj.leadAuditorId)?.name || "Unassigned"}
+                      </td>
+                      <td className={`px-5 py-3.5 text-right font-bold ${statusColor}`}>
+                        {statusText}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
-
       </div>
 
     </div>

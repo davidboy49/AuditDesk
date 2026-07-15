@@ -22,7 +22,11 @@ import {
   Import,
   Download,
   Trash2,
-  Plus
+  Plus,
+  CheckCircle,
+  XCircle,
+  RotateCcw,
+  Mail
 } from "lucide-react";
 import { AuditProject, User, Attachment } from "@/lib/mockData";
 import { RBAC } from "@/lib/auth";
@@ -33,7 +37,8 @@ import {
   updateProjectAction, 
   createProjectAction, 
   addAttachmentAction, 
-  deleteAttachmentAction 
+  deleteAttachmentAction,
+  deleteProjectAction 
 } from "@/app/actions";
 
 interface PlanningClientProps {
@@ -54,6 +59,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
   // Search filter
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
+  const [emailAlert, setEmailAlert] = useState<{ to: string; subject: string } | null>(null);
 
   // Selected project details edit state
   const selectedProject = projects.find(p => p.id === selectedProjectId);
@@ -444,6 +450,92 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     }
   };
 
+  const saveStatusChange = async (newStatus: any) => {
+    if (!selectedProject) return;
+    setEditStatus(newStatus);
+    setSaveFeedback(`Updating status to ${newStatus}...`);
+    try {
+      const updated = await updateProjectAction(selectedProject.id, {
+        name: editName,
+        status: newStatus,
+        scope: editScope,
+        planningDetails: editPlanning,
+        startDate: editStart,
+        endDate: editEnd,
+        leadAuditorId: editLead || null,
+        workflowStage: editWorkflowStage,
+        deptPicIds: editDeptPicIds.join(","),
+        auditorIds: editAuditorIds,
+        auditorNames: editAuditorIds.join(","),
+        objectives: editObjectives,
+        riskProcess: editRiskProcess,
+        riskClass: editRiskClass,
+        opEx: editOpEx,
+        fieldwork: editFieldwork,
+        outcome: editOutcome,
+        dataRequestType: editDataRequestType,
+        focusArea: editFocusArea,
+        opExTimeline: JSON.stringify({
+          presentationDate: editTimelinePresDate,
+          notificationDate: editTimelineNotificationDate,
+          fieldWorkStart: editTimelineFieldWorkStart,
+          fieldWorkEnd: editTimelineFieldWorkEnd,
+          findingReportOffset: Number(editTimelineFindingReportOffset),
+          finalReportOffset: Number(editTimelineFinalReportOffset)
+        }),
+        approvals: JSON.stringify({
+          preparedByName: editPreparedByName,
+          preparedByTitle: editPreparedByTitle,
+          preparedDate: editPreparedDate,
+          approvedByName: editApprovedByName,
+          approvedByTitle: editApprovedByTitle,
+          approvedDate: editApprovedDate
+        })
+      });
+
+      if (updated) {
+        setProjects(projects.map(p => p.id === selectedProject.id ? updated : p));
+        setSaveFeedback(`Status successfully updated to ${newStatus === "PLANNING" ? "Planning" : newStatus === "SUBMITTED_FOR_APPROVAL" ? "Submitted for Approval" : "Released"}.`);
+        setTimeout(() => setSaveFeedback(null), 3000);
+      } else {
+        setSaveFeedback("Status update failed: Project not found.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setSaveFeedback(`Status update Error: ${err.message || err.toString()}`);
+    }
+  };
+
+  const handleSubmitForApproval = async () => {
+    if (!selectedProject) return;
+    await saveStatusChange("SUBMITTED_FOR_APPROVAL");
+    const leadUser = users.find(u => u.name === editLead || u.id === editLead);
+    const toEmail = leadUser?.email || "sarah.lead@auditdesk.com";
+    setEmailAlert({
+      to: toEmail,
+      subject: `Audit Plan ${selectedProject.code} has been submitted for approval.`
+    });
+  };
+
+  const handleApprovePlan = async () => {
+    await saveStatusChange("RELEASED");
+  };
+
+  const handleRejectPlan = async () => {
+    if (!selectedProject) return;
+    await saveStatusChange("PLANNING");
+    const leadUser = users.find(u => u.name === editLead || u.id === editLead);
+    const toEmail = leadUser?.email || "sarah.lead@auditdesk.com";
+    setEmailAlert({
+      to: toEmail,
+      subject: `Audit Plan ${selectedProject.code} was REJECTED by the approver. The plan has been reopened for editing. Please revise and resubmit.`
+    });
+  };
+
+  const handleReopenPlan = async () => {
+    await saveStatusChange("PLANNING");
+  };
+
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || !newCode || !newStart || !newEnd) return;
@@ -541,6 +633,21 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     }
   };
 
+  const handleDeleteProject = async (id: string) => {
+    if (!window.confirm("Are you sure you want to delete this Audit Plan? This action cannot be undone and will delete all related findings, reports, schedules, and attachments.")) {
+      return;
+    }
+    const success = await deleteProjectAction(id);
+    if (success) {
+      setProjects(projects.filter(p => p.id !== id));
+      if (selectedProjectId === id) {
+        setSelectedProjectId("");
+      }
+    } else {
+      alert("Failed to delete the Audit Plan.");
+    }
+  };
+
   const handleDownloadFile = (attachment: Attachment) => {
     // Reconstruct file data download using Base64 URI anchor tag
     const link = document.createElement("a");
@@ -560,13 +667,13 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
   });
 
   const canModify = RBAC.canCreateProject(currentUser);
+  const isReadOnly = editStatus !== "PLANNING";
   const leadAuditors = users.filter(u => u.role === "LEAD_AUDITOR" || u.role === "ADMIN");
 
   const statusOptions = [
     { label: "Planning", value: "PLANNING" },
-    { label: "In Progress", value: "IN_PROGRESS" },
-    { label: "Reporting", value: "REPORTING" },
-    { label: "Archived", value: "ARCHIVED" }
+    { label: "Submitted for Approval", value: "SUBMITTED_FOR_APPROVAL" },
+    { label: "Released", value: "RELEASED" }
   ];
 
   return (
@@ -577,100 +684,146 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
         <h1 className="text-xl font-bold tracking-tight text-slate-800 dark:text-slate-100">Audit Plan</h1>
       </div>
 
-      {/* New Project Creator View */}
+      {/* New Project Creator Modal */}
       {isCreating && (
-        <div className="p-6 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-sm space-y-6">
-          <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-4">
-            <h3 className="font-bold text-base text-slate-800 dark:text-slate-100">Create New Audit Project</h3>
-            <button 
-              onClick={() => setIsCreating(false)}
-              className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
-            >
-              <X className="w-4.5 h-4.5" />
-            </button>
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm transition-opacity duration-300 animate-in fade-in"
+          onClick={() => setIsCreating(false)}
+        >
+          <div 
+            className="bg-white dark:bg-slate-950 w-full max-w-2xl rounded-lg shadow-2xl flex flex-col overflow-hidden h-fit border border-slate-200 dark:border-slate-850 scoping-modal-container transform scale-100 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-8 py-5 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="text-[10px] font-roboto text-slate-400 font-bold uppercase tracking-wider">
+                  Document 1. Audit Plan
+                </div>
+                <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
+                  Scaffold New Audit Project
+                </h2>
+              </div>
+              
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsCreating(false)}
+                  className="p-2 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-500 rounded cursor-pointer transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+
+            {/* Modal Form with Word Document table styling */}
+            <form onSubmit={handleCreateProject} className="p-8 space-y-6">
+              <div className="overflow-x-auto border border-slate-300 dark:border-slate-800 rounded-md">
+                <table className="w-full border-collapse text-xs">
+                  <tbody>
+                    {/* Row 1: Project Name */}
+                    <tr className="border-b border-slate-300 dark:border-slate-800/80">
+                      <td className="w-1/4 px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
+                        Project Name:
+                      </td>
+                      <td colSpan={3} className="px-4 py-2">
+                        <input
+                          type="text"
+                          required
+                          value={newName}
+                          onChange={(e) => setNewName(e.target.value)}
+                          placeholder="e.g. SOX Audit 2026"
+                          className="w-full bg-transparent border-none p-0 text-xs focus:outline-none font-bold text-slate-800 dark:text-slate-100"
+                        />
+                      </td>
+                    </tr>
+
+                    {/* Row 2: Project Code */}
+                    <tr className="border-b border-slate-300 dark:border-slate-800/80">
+                      <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
+                        Project Code:
+                      </td>
+                      <td colSpan={3} className="px-4 py-2">
+                        <input
+                          type="text"
+                          required
+                          value={newCode}
+                          onChange={(e) => setNewCode(e.target.value)}
+                          placeholder="e.g. AUD-2026-003"
+                          className="w-full bg-transparent border-none p-0 text-xs focus:outline-none font-mono text-slate-800 dark:text-slate-100"
+                        />
+                      </td>
+                    </tr>
+
+                    {/* Row 3: Start Date + End Date */}
+                    <tr className="border-b border-slate-300 dark:border-slate-800/80">
+                      <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
+                        Start Date:
+                      </td>
+                      <td className="w-1/4 px-4 py-2 border-r border-slate-300 dark:border-slate-800/80">
+                        <input
+                          type="date"
+                          required
+                          value={newStart}
+                          onChange={(e) => setNewStart(e.target.value)}
+                          className="w-full bg-transparent border-none p-0 text-xs focus:outline-none text-slate-800 dark:text-slate-100 cursor-pointer"
+                        />
+                      </td>
+                      <td className="w-1/4 px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
+                        End Date:
+                      </td>
+                      <td className="px-4 py-2">
+                        <input
+                          type="date"
+                          required
+                          value={newEnd}
+                          onChange={(e) => setNewEnd(e.target.value)}
+                          className="w-full bg-transparent border-none p-0 text-xs focus:outline-none text-slate-800 dark:text-slate-100 cursor-pointer"
+                        />
+                      </td>
+                    </tr>
+
+                    {/* Row 4: Lead Auditor */}
+                    <tr>
+                      <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
+                        Lead Auditor:
+                      </td>
+                      <td colSpan={3} className="px-4 py-1.5">
+                        <select
+                          value={newLead}
+                          onChange={(e) => setNewLead(e.target.value)}
+                          className="w-full bg-transparent border-none p-0 text-xs focus:outline-none text-slate-800 dark:text-slate-100 cursor-pointer"
+                        >
+                          <option value="" className="bg-white dark:bg-slate-950">Select Lead Auditor...</option>
+                          {leadAuditors.map((u) => (
+                            <option key={u.id} value={u.id} className="bg-white dark:bg-slate-950">
+                              {u.name}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex gap-3 justify-end pt-4 border-t border-slate-200 dark:border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setIsCreating(false)}
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold rounded cursor-pointer text-slate-700 dark:text-slate-300 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-[#05375c] text-white hover:bg-[#074776] text-xs font-bold rounded cursor-pointer transition-colors flex items-center gap-1.5"
+                >
+                  <Save className="w-3.5 h-3.5" /> Create Audit Planning
+                </button>
+              </div>
+            </form>
           </div>
-
-          <form onSubmit={handleCreateProject} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-500 uppercase">Project Name</label>
-                <input
-                  type="text"
-                  required
-                  value={newName}
-                  onChange={(e) => setNewName(e.target.value)}
-                  placeholder="e.g. SOX Audit 2026"
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-2 text-sm focus:outline-none"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-500 uppercase">Project Code</label>
-                <input
-                  type="text"
-                  required
-                  value={newCode}
-                  onChange={(e) => setNewCode(e.target.value)}
-                  placeholder="e.g. AUD-2026-003"
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-2 text-sm focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-500 uppercase">Start Date</label>
-                <input
-                  type="date"
-                  required
-                  value={newStart}
-                  onChange={(e) => setNewStart(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-2 text-sm focus:outline-none"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-mono text-slate-500 uppercase">End Date</label>
-                <input
-                  type="date"
-                  required
-                  value={newEnd}
-                  onChange={(e) => setNewEnd(e.target.value)}
-                  className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-2 text-sm focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-mono text-slate-500 uppercase">Lead Auditor</label>
-              <select
-                value={newLead}
-                onChange={(e) => setNewLead(e.target.value)}
-                className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-800 rounded-md px-3 py-2 text-sm focus:outline-none cursor-pointer"
-              >
-                <option value="">Select Lead Auditor...</option>
-                {leadAuditors.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="flex gap-3 justify-end pt-2">
-              <button
-                type="button"
-                onClick={() => setIsCreating(false)}
-                className="px-4 py-2 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-800 text-sm rounded-md transition-colors cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-[#05375c] text-white font-semibold text-sm rounded-md hover:bg-[#074776] transition-colors cursor-pointer"
-              >
-                Scaffold Project
-              </button>
-            </div>
-          </form>
         </div>
       )}
 
@@ -705,6 +858,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                 <th className="px-6 py-4">Start Date</th>
                 <th className="px-6 py-4">End Date</th>
                 <th className="px-6 py-4 text-right">Status</th>
+                {canModify && <th className="px-6 py-4 text-center w-20">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
@@ -712,15 +866,12 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                 let statusText = "Planning";
                 let statusColor = "text-amber-500";
                 
-                if (proj.status === "IN_PROGRESS") {
+                if (proj.status === "RELEASED") {
                   statusText = "Released";
                   statusColor = "text-[#30b050]";
-                } else if (proj.status === "REPORTING") {
-                  statusText = "Reporting";
+                } else if (proj.status === "SUBMITTED_FOR_APPROVAL") {
+                  statusText = "Submitted for Approval";
                   statusColor = "text-blue-500";
-                } else if (proj.status === "ARCHIVED") {
-                  statusText = "Inactive";
-                  statusColor = "text-red-500";
                 }
 
                 return (
@@ -756,6 +907,21 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                     <td className={`px-6 py-4 text-right font-bold ${statusColor}`}>
                       {statusText}
                     </td>
+                    {canModify && (
+                      <td className="px-6 py-4 text-center no-print">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteProject(proj.id);
+                          }}
+                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
+                          title="Delete Audit Plan"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}
@@ -774,30 +940,31 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
             {/* Modal Header Breadcrumb & Actions */}
             <div className="px-8 py-5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">
-                <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-400 font-bold">
+                <div className="flex items-center gap-1.5 text-[15px] font-roboto text-400 font-bold">
                   <span>Audit Plans</span>
                   <span>&gt;</span>
-                  <span className="text-slate-600 dark:text-slate-300">{selectedProject.code}</span>
+                  <span className="text-slate-600 font-roboto dark:text-slate-300">{selectedProject.code}</span>
                 </div>
                 <input
                   type="text"
+                  disabled={editStatus !== "PLANNING"}
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  className="text-lg md:text-xl font-bold tracking-tight text-slate-800 dark:text-slate-100 bg-transparent border-b border-transparent hover:border-slate-300 focus:border-[#05375c] focus:outline-none w-full pb-0.5"
+                  className={`text-lg md:text-xl font-bold tracking-tight text-slate-800 dark:text-slate-100 bg-transparent border-b border-transparent focus:outline-none w-full pb-0.5 ${editStatus === "PLANNING" ? "hover:border-slate-300 focus:border-[#05375c]" : "cursor-not-allowed"}`}
                 />
                 
                 {/* Meta details row under header */}
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-1 text-[10px] font-mono text-slate-400">
                   <span className="bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 border border-sky-100 dark:border-sky-900/50 px-2 py-0.5 rounded font-bold uppercase">
-                    {editStatus === "PLANNING" ? "Drafting" : editStatus === "IN_PROGRESS" ? "Released" : editStatus}
+                    {editStatus === "PLANNING" ? "Planning" : editStatus === "SUBMITTED_FOR_APPROVAL" ? "Submitted for Approval" : editStatus === "RELEASED" ? "Released" : editStatus}
                   </span>
-                  <span className="flex items-center gap-1">
-                    <CalendarDays className="w-3.5 h-3.5" /> Created {selectedProject.startDate}
+                  <span className="flex items-center gap-1 font-roboto">
+                    <CalendarDays className="w-3.5 h-3.5 font-roboto" /> Created {selectedProject.startDate}
                   </span>
-                  <span className="flex items-center gap-1">
-                    <UserIcon className="w-3.5 h-3.5" /> Assigned to {users.find(u => u.id === editLead)?.name || "Unassigned"}
+                  <span className="flex items-center gap-1 font-roboto">
+                    <UserIcon className="w-3.5 h-3.5" /> Assigned to {users.find(u => u.id === editLead || u.name === editLead)?.name || "Unassigned"}
                   </span>
-                  <span className="flex items-center gap-1">
+                  <span className="flex items-center gap-1 font-roboto">
                     <Activity className="w-3.5 h-3.5" /> Owner: Sarah Jenkins
                   </span>
                   <span className="flex items-center gap-1">
@@ -816,24 +983,79 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
               {/* Action buttons (Header Right) */}
               <div className="flex items-center gap-2.5 self-start md:self-auto shrink-0 no-print">
                 <button
+                  type="button"
                   onClick={() => window.print()}
                   className="flex items-center gap-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-200 text-xs font-bold rounded transition-colors cursor-pointer"
                 >
                   <FileDown className="w-3.5 h-3.5" /> Export PDF
                 </button>
+
+                {editStatus === "PLANNING" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={handleSaveOnly}
+                      className="flex items-center gap-1.5 px-3 py-2 border border-black-300 dark:border-blue-700 bg-black-50/50 dark:bg-white-900/10 hover:bg-blue-100/50 text-[#0066cc] text-xs font-bold rounded transition-colors cursor-pointer"
+                    >
+                      <Save className="w-3.5 h-3.5" /> Save Plan
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSubmitForApproval}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-[#0a1128] dark:bg-accent text-white dark:text-slate-950 hover:opacity-90 text-xs font-bold rounded transition-colors cursor-pointer"
+                    >
+                      <Send className="w-3.5 h-3.5" /> Submit for Approval
+                    </button>
+                  </>
+                )}
+
+                {editStatus === "SUBMITTED_FOR_APPROVAL" && (
+                  <>
+                    {(currentUser.role === "ADMIN" || currentUser.role === "LEAD_AUDITOR") ? (
+                      <>
+                        <button
+                          type="button"
+                          onClick={handleApprovePlan}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded transition-colors cursor-pointer"
+                        >
+                          <CheckCircle className="w-3.5 h-3.5" /> Approve Plan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleRejectPlan}
+                          className="flex items-center gap-1.5 px-4 py-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded transition-colors cursor-pointer"
+                        >
+                          <XCircle className="w-3.5 h-3.5" /> Reject Plan
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-xs font-mono font-bold text-blue-600 dark:text-sky-400 bg-blue-50 dark:bg-blue-950/40 px-3 py-2 rounded border border-blue-100 dark:border-blue-900/40">
+                        Waiting for Approval (Locked)
+                      </span>
+                    )}
+                  </>
+                )}
+
+                {editStatus === "RELEASED" && (
+                  <>
+                    {currentUser.role === "ADMIN" ? (
+                      <button
+                        type="button"
+                        onClick={handleReopenPlan}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded transition-colors cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Reopen Plan
+                      </button>
+                    ) : (
+                      <span className="text-xs font-mono font-bold text-[#30b050] bg-green-500/10 px-3 py-2 rounded border border-green-500/25">
+                        Approved & Released (Locked)
+                      </span>
+                    )}
+                  </>
+                )}
+
                 <button
-                  onClick={handleSaveOnly}
-                  className="flex items-center gap-1.5 px-3 py-2 border border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-900/10 hover:bg-blue-100/50 text-[#0066cc] text-xs font-bold rounded transition-colors cursor-pointer"
-                >
-                  <Save className="w-3.5 h-3.5" /> Save Plan
-                </button>
-                <button
-                  onClick={handleSaveEdit}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-[#0a1128] dark:bg-accent text-white dark:text-slate-950 hover:opacity-90 text-xs font-bold rounded transition-colors cursor-pointer"
-                >
-                  <Send className="w-3.5 h-3.5" /> Submit for Review
-                </button>
-                <button
+                  type="button"
                   onClick={handleCloseEditor}
                   className="p-2 border border-slate-200 dark:border-slate-850 hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-500 rounded cursor-pointer"
                   title="Close Screen"
@@ -845,102 +1067,19 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
             {/* Modal Body Container Grid matching screen.png layout */}
             <div className="p-8 space-y-6 overflow-y-auto max-h-[72vh] bg-slate-50 dark:bg-slate-950">
-              
-              {/* Stepper Stage Indicator */}
-              <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-850 rounded-lg p-5">
-                <div className="flex items-center justify-between">
-                  <div className="text-[10px] font-mono font-bold uppercase text-slate-400">Document Workflow Stage</div>
-                  <div className="text-[10px] font-mono font-bold text-[#0066cc] bg-blue-500/10 px-2.5 py-0.5 rounded uppercase">
-                    Current: {editWorkflowStage}
-                  </div>
-                </div>
-                <div className="mt-5 flex items-center justify-between relative px-2">
-                  {/* Line connector */}
-                  <div className="absolute left-8 right-8 top-[11px] h-0.5 bg-slate-100 dark:bg-slate-800 z-0" />
-                  <div 
-                    className="absolute left-8 top-[11px] h-0.5 bg-[#0066cc] z-0 transition-all duration-300" 
-                    style={{
-                      width: editWorkflowStage === "DRAFTING" ? "0%" : editWorkflowStage === "REVIEW" ? "33%" : editWorkflowStage === "PENDING_PIC" ? "66%" : "100%"
-                    }}
-                  />
-
-                  {/* Stage Nodes */}
-                  {[
-                    { label: "Drafting", value: "DRAFTING" },
-                    { label: "Internal Review", value: "REVIEW" },
-                    { label: "Pending PIC Sign-off", value: "PENDING_PIC" },
-                    { label: "Approved & Released", value: "APPROVED" }
-                  ].map((stage, idx) => {
-                    const stages = ["DRAFTING", "REVIEW", "PENDING_PIC", "APPROVED"];
-                    const currentIdx = stages.indexOf(editWorkflowStage);
-                    const isPast = idx <= currentIdx;
-                    const isCurrent = stage.value === editWorkflowStage;
-
-                    return (
-                      <button
-                        key={stage.value}
-                        type="button"
-                        onClick={() => handleUpdateWorkflowStage(stage.value as any)}
-                        className="z-10 flex flex-col items-center gap-1.5 focus:outline-none cursor-pointer group"
-                      >
-                        <div 
-                          className={`w-6 h-6 rounded-full flex items-center justify-center font-mono text-[9px] font-bold border transition-colors ${
-                            isCurrent 
-                              ? "bg-[#0066cc] border-[#0066cc] text-white" 
-                              : isPast 
-                                ? "bg-blue-500/10 border-[#0066cc] text-[#0066cc]" 
-                                : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-850 text-slate-400"
-                          }`}
-                        >
-                          {idx + 1}
-                        </div>
-                        <span className={`text-[10px] font-bold tracking-tight transition-colors ${isCurrent ? "text-slate-800 dark:text-slate-100" : "text-slate-400 group-hover:text-slate-600 dark:group-hover:text-slate-300"}`}>
-                          {stage.label}
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
 
               {/* Quick Summary Panel at the Top */}
               <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 rounded-lg p-6 space-y-4 shadow-sm">
                 <div className="flex justify-between items-center border-b border-slate-150 dark:border-slate-800 pb-2">
-                  <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                    Quick Summary
+                  <h3 className="text-xs font-roboto font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                    Plan Members
                   </h3>
                   <span className="text-[10px] text-slate-400 dark:text-slate-500 italic">
-                    Last edited by Sarah Jenkins 2 hours ago
+                    Last edited by AI 2 hours ago
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {/* Column 1: Risk Level & Completion Status */}
-                  <div className="space-y-4">
-                    <div className="flex flex-col gap-1.5">
-                      <span className="text-xs font-mono font-bold uppercase text-slate-500">Risk Level</span>
-                      <select 
-                        value={riskLevel} 
-                        onChange={(e) => setRiskLevel(e.target.value)}
-                        className="bg-red-500/10 border border-red-500/20 text-red-600 dark:text-red-400 text-xs font-mono font-bold px-3 py-2 rounded focus:outline-none cursor-pointer"
-                      >
-                        <option value="High Impact" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">High Impact</option>
-                        <option value="Medium Impact" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">Medium Impact</option>
-                        <option value="Low Impact" className="bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200">Low Impact</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-xs">
-                        <span className="text-slate-500 font-mono font-bold uppercase">Completion Status</span>
-                        <span className="font-mono text-slate-800 dark:text-slate-200 font-semibold">{completionStatus}</span>
-                      </div>
-                      <div className="w-full bg-slate-100 dark:bg-slate-800 h-2 rounded-full overflow-hidden">
-                        <div className="bg-[#0066cc] h-full rounded-full w-[45%]" />
-                      </div>
-                    </div>
-                  </div>
-
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Column 2: Lead & Auditors */}
                   <div className="space-y-4">
                     <div className="flex flex-col gap-1.5">
@@ -948,6 +1087,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                       <MultiSelect
                         selectedValues={editLead ? editLead.split(",").map(s => s.trim()).filter(Boolean) : []}
                         onChange={(values) => setEditLead(values.join(", "))}
+                        disabled={isReadOnly}
                         options={users
                           .filter(u => u.role === "LEAD_AUDITOR" || u.role === "ADMIN")
                           .map(u => ({
@@ -964,6 +1104,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                       <MultiSelect
                         selectedValues={editAuditorIds}
                         onChange={(values) => setEditAuditorIds(values)}
+                        disabled={isReadOnly}
                         options={users
                           .filter(u => u.role === "ADMIN" || u.role === "LEAD_AUDITOR" || u.role === "AUDITOR")
                           .map(u => ({
@@ -983,6 +1124,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                       <MultiSelect
                         selectedValues={editDeptPicIds}
                         onChange={(values) => setEditDeptPicIds(values)}
+                        disabled={isReadOnly}
                         options={users.map(u => ({
                           value: u.name,
                           label: u.name,
@@ -993,6 +1135,103 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                     </div>
                   </div>
                 </div>
+
+                {/* Linked Items Section */}
+                {selectedProject && (
+                  <div className="pt-4 border-t border-slate-150 dark:border-slate-800 space-y-2.5">
+                    <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-850 dark:text-slate-205">
+                      Linked Items
+                    </h4>
+                    <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400 font-mono">
+                      {/* Meetings */}
+                      {(() => {
+                        const meetings = selectedProject.executionSchedules?.filter(e => e.language === "meeting") || [];
+                        if (meetings.length === 0) return null;
+                        return meetings.map(m => (
+                          <div key={m.id} className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 bg-sky-500 rounded-full shrink-0" />
+                            <span>Open Meetings: </span>
+                            <a 
+                              href={`/meetings?id=${m.id}`} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="text-[#0066cc] hover:underline font-bold"
+                            >
+                              OM-{m.visitNumber} ({m.organization})
+                            </a>
+                          </div>
+                        ));
+                      })()}
+
+                      {/* Schedules */}
+                      {(() => {
+                        const schedules = selectedProject.executionSchedules?.filter(e => e.language !== "meeting" && e.language !== "finding") || [];
+                        if (schedules.length === 0) return null;
+                        return schedules.map(s => (
+                          <div key={s.id} className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0" />
+                            <span>Execution schedule: </span>
+                            <a 
+                              href={`/schedule?id=${s.id}`} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="text-[#0066cc] hover:underline font-bold"
+                            >
+                              SCH-{s.visitNumber} ({s.organization})
+                            </a>
+                          </div>
+                        ));
+                      })()}
+
+                      {/* Findings */}
+                      {(() => {
+                        const dbFindings = selectedProject.findings || [];
+                        const scheduleFindings = selectedProject.executionSchedules?.filter(e => e.language === "finding") || [];
+                        if (dbFindings.length === 0 && scheduleFindings.length === 0) return null;
+                        
+                        return (
+                          <>
+                            {dbFindings.map(f => (
+                              <div key={f.id} className="flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full shrink-0" />
+                                <span>Audit Findings: </span>
+                                <a 
+                                  href={`/findings?id=${f.id}`} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="text-[#0066cc] hover:underline font-bold"
+                                >
+                                  {f.title} ({f.status})
+                                </a>
+                              </div>
+                            ))}
+                            {scheduleFindings.map(sf => (
+                              <div key={sf.id} className="flex items-center gap-1.5">
+                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full shrink-0" />
+                                <span>Audit Findings: </span>
+                                <a 
+                                  href={`/findings?id=${sf.id}`} 
+                                  target="_blank" 
+                                  rel="noopener noreferrer" 
+                                  className="text-[#0066cc] hover:underline font-bold"
+                                >
+                                  FD-{sf.visitNumber} ({sf.organization})
+                                </a>
+                              </div>
+                            ))}
+                          </>
+                        );
+                      })()}
+
+                      {/* Fallback if nothing is linked */}
+                      {(!selectedProject.executionSchedules?.length && !selectedProject.findings?.length) && (
+                        <div className="text-slate-400 italic text-[11px] font-sans">
+                          No linked meetings, schedules, or findings for this project plan.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Panel 1: Objectives & Scope (Full Width) */}
@@ -1002,13 +1241,13 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                 </h3>
 
                 <div className="space-y-1.5">
-                  <label className="text-[14px] font-mono font-bold text-slate-750 dark:text-slate-350 uppercase">1.1 Objectives</label>
-                  <RichEditor value={editObjectives} onChange={setEditObjectives} />
+                  <label className="text-[14px] font-mono font-bold text-slate-750 dark:text-slate-355 uppercase">1.1 Objectives</label>
+                  <RichEditor value={editObjectives} onChange={setEditObjectives} editable={!isReadOnly} />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[14px] font-mono font-bold text-slate-750 dark:text-slate-350 uppercase">1.2 Audit Scope</label>
-                  <RichEditor value={editScope} onChange={setEditScope} />
+                  <label className="text-[14px] font-mono font-bold text-slate-750 dark:text-slate-355 uppercase">1.2 Audit Scope</label>
+                  <RichEditor value={editScope} onChange={setEditScope} editable={!isReadOnly} />
                 </div>
               </div>
 
@@ -1030,11 +1269,11 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-[15px] font-mono font-bold text-slate-800 uppercase">Risk meets company process</label>
-                    <RichEditor value={editRiskProcess} onChange={setEditRiskProcess} />
+                    <RichEditor value={editRiskProcess} onChange={setEditRiskProcess} editable={!isReadOnly} />
                   </div>
                   <div className="space-y-1.5">
                     <label className=" text-[15px] font-mono font-bold text-slate-800 uppercase">Classify risk base on potential impact</label>
-                    <RichEditor value={editRiskClass} onChange={setEditRiskClass} />
+                    <RichEditor value={editRiskClass} onChange={setEditRiskClass} editable={!isReadOnly} />
                   </div>
                 </div>
               </div>
@@ -1047,7 +1286,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                 
                 <div className="space-y-1.5">
                   <label className="text-[15px] font-mono font-bold text-slate-800 uppercase">Obtain data error to fieldwork mapping</label>
-                  <RichEditor value={editOpEx} onChange={setEditOpEx} />
+                  <RichEditor value={editOpEx} onChange={setEditOpEx} editable={!isReadOnly} />
                 </div>
 
                 <div className="pt-4 border-t border-slate-150 dark:border-slate-800/80 space-y-1">
@@ -1055,11 +1294,11 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   <div className="space-y-4">
                     <div className="space-y-1.5">
                       <label className="text-[15px] font-mono font-bold text-slate-800 uppercase">Type of data to request for information</label>
-                      <RichEditor value={editDataRequestType} onChange={setEditDataRequestType} />
+                      <RichEditor value={editDataRequestType} onChange={setEditDataRequestType} editable={!isReadOnly} />
                     </div>
                     <div className="space-y-1.5">
                       <label className="text-[15px] font-mono font-bold text-slate-800 uppercase">Which part need to focus on</label>
-                      <RichEditor value={editFocusArea} onChange={setEditFocusArea} />
+                      <RichEditor value={editFocusArea} onChange={setEditFocusArea} editable={!isReadOnly} />
                     </div>
                   </div>
                 </div>
@@ -1078,6 +1317,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                       <input 
                         type="date" 
                         value={editTimelinePresDate}
+                        disabled={isReadOnly}
                         onChange={(e) => setEditTimelinePresDate(e.target.value)}
                         className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
                       />
@@ -1088,6 +1328,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                       <input 
                         type="date" 
                         value={editTimelineNotificationDate}
+                        disabled={isReadOnly}
                         onChange={(e) => setEditTimelineNotificationDate(e.target.value)}
                         className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
                       />
@@ -1099,6 +1340,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         <input 
                           type="date" 
                           value={editTimelineFieldWorkStart}
+                          disabled={isReadOnly}
                           onChange={(e) => setEditTimelineFieldWorkStart(e.target.value)}
                           className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
                         />
@@ -1108,6 +1350,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         <input 
                           type="date" 
                           value={editTimelineFieldWorkEnd}
+                          disabled={isReadOnly}
                           onChange={(e) => setEditTimelineFieldWorkEnd(e.target.value)}
                           className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
                         />
@@ -1120,6 +1363,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         <input 
                           type="number" 
                           value={editTimelineFindingReportOffset}
+                          disabled={isReadOnly}
                           onChange={(e) => setEditTimelineFindingReportOffset(parseInt(e.target.value) || 0)}
                           className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
                         />
@@ -1129,6 +1373,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         <input 
                           type="number" 
                           value={editTimelineFinalReportOffset}
+                          disabled={isReadOnly}
                           onChange={(e) => setEditTimelineFinalReportOffset(parseInt(e.target.value) || 0)}
                           className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
                         />
@@ -1215,7 +1460,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                 <div className="space-y-4">
                   <div className="space-y-1.5">
                     <label className="text-[15px] font-mono font-bold text-slate-800 uppercase">Expected Outcomes</label>
-                    <RichEditor value={editFieldwork} onChange={setEditFieldwork} />
+                    <RichEditor value={editFieldwork} onChange={setEditFieldwork} editable={!isReadOnly} />
                   </div>
                 </div>
               </div>
@@ -1227,7 +1472,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   {/* Prepared By Section */}
-                  <div className="bg-slate-50 dark:bg-slate-950 p-5 rounded-lg border border-slate-100 dark:border-slate-850 space-y-4">
+                  <div className="bg-slate-50 dark:bg-slate-950 p-5 rounded-lg border border-slate-100 dark:border-slate-855 space-y-4">
                     <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
                       <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
                       <h4 className="text-[12px] font-mono font-bold text-slate-700 dark:text-slate-300 uppercase">Prepared By</h4>
@@ -1239,6 +1484,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         <input 
                           type="text" 
                           value={editPreparedByName}
+                          disabled={isReadOnly}
                           onChange={(e) => setEditPreparedByName(e.target.value)}
                           placeholder="e.g. Sarah Jenkins"
                           className="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
@@ -1249,6 +1495,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         <input 
                           type="text" 
                           value={editPreparedByTitle}
+                          disabled={isReadOnly}
                           onChange={(e) => setEditPreparedByTitle(e.target.value)}
                           placeholder="e.g. Lead Auditor"
                           className="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
@@ -1259,6 +1506,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         <input 
                           type="date" 
                           value={editPreparedDate}
+                          disabled={isReadOnly}
                           onChange={(e) => setEditPreparedDate(e.target.value)}
                           className="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500"
                         />
@@ -1267,7 +1515,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   </div>
 
                   {/* Approved By Section */}
-                  <div className="bg-slate-50 dark:bg-slate-950 p-5 rounded-lg border border-slate-100 dark:border-slate-850 space-y-4">
+                  <div className="bg-slate-50 dark:bg-slate-950 p-5 rounded-lg border border-slate-100 dark:border-slate-855 space-y-4">
                     <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
                       <div className="w-2.5 h-2.5 rounded-full bg-[#00cc66]"></div>
                       <h4 className="text-[12px] font-mono font-bold text-slate-700 dark:text-slate-300 uppercase">Approved By</h4>
@@ -1279,6 +1527,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         <input 
                           type="text" 
                           value={editApprovedByName}
+                          disabled={isReadOnly}
                           onChange={(e) => setEditApprovedByName(e.target.value)}
                           placeholder="e.g. Alice Auditee"
                           className="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-[#00cc66]"
@@ -1289,6 +1538,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         <input 
                           type="text" 
                           value={editApprovedByTitle}
+                          disabled={isReadOnly}
                           onChange={(e) => setEditApprovedByTitle(e.target.value)}
                           placeholder="e.g. Compliance Director"
                           className="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-[#00cc66]"
@@ -1299,6 +1549,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         <input 
                           type="date" 
                           value={editApprovedDate}
+                          disabled={isReadOnly}
                           onChange={(e) => setEditApprovedDate(e.target.value)}
                           className="w-full px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-900 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-[#00cc66]"
                         />
@@ -1312,20 +1563,22 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   <h3 className="flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
                     <FileText className="w-4 h-4" /> Plan Attachments & Filesss
                   </h3>
-                  <div>
-                    <input
-                      type="file"
-                      id="plan-file-input"
-                      className="hidden"
-                      onChange={handleUploadFile}
-                    />
-                    <label
-                      htmlFor="plan-file-input"
-                      className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 dark:border-slate-850 text-[10px] font-bold rounded text-slate-600 dark:text-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Attach File
-                    </label>
-                  </div>
+                  {!isReadOnly && (
+                    <div>
+                      <input
+                        type="file"
+                        id="plan-file-input"
+                        className="hidden"
+                        onChange={handleUploadFile}
+                      />
+                      <label
+                        htmlFor="plan-file-input"
+                        className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 dark:border-slate-850 text-[10px] font-bold rounded text-slate-600 dark:text-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Attach File
+                      </label>
+                    </div>
+                  )}
                 </div>
 
                 {/* Attachment List */}
@@ -1362,14 +1615,16 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                             >
                               <Download className="w-4 h-4" />
                             </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteFile(file.id)}
-                              className="p-1 text-slate-500 hover:text-red-500 cursor-pointer"
-                              title="Remove Attachment"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            {!isReadOnly && (
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteFile(file.id)}
+                                className="p-1 text-slate-500 hover:text-red-500 cursor-pointer"
+                                title="Remove Attachment"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -1409,6 +1664,29 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Simulated Email Notification Banner */}
+      {emailAlert && (
+        <div className="fixed bottom-4 right-4 bg-slate-900 border border-slate-800 text-white rounded-lg shadow-xl p-4 max-w-sm z-[100] animate-slide-up flex gap-3">
+          <div className="bg-sky-500/10 p-2 rounded text-sky-400 h-fit">
+            <Mail className="w-5 h-5" />
+          </div>
+          <div className="flex-1 space-y-1">
+            <div className="text-[10px] font-mono text-sky-400 font-bold uppercase tracking-wider">Simulated Email Alert</div>
+            <div className="text-xs font-bold text-slate-100">To: {emailAlert.to}</div>
+            <p className="text-[10px] text-slate-400 leading-relaxed">{emailAlert.subject}</p>
+            <div className="pt-1 flex justify-end">
+              <button 
+                type="button"
+                onClick={() => setEmailAlert(null)}
+                className="text-[10px] font-bold text-sky-400 hover:underline cursor-pointer"
+              >
+                Dismiss
+              </button>
+            </div>
           </div>
         </div>
       )}

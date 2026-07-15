@@ -146,6 +146,8 @@ model ExecutionSchedule {
   objectives      String       @default("")
   scope           String       @default("")
   scheduleRows    String       // JSON serialized rows: [{date, time, activity, conductBy, pIncharge}]
+  ownerName       String       @default("Sarah Jenkins")
+  lastModifiedBy  String       @default("Sarah Jenkins")
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 }

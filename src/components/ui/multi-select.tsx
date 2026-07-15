@@ -14,6 +14,7 @@ interface MultiSelectProps {
   onChange: (values: string[]) => void;
   options: Option[];
   placeholder?: string;
+  disabled?: boolean;
 }
 
 export default function MultiSelect({
@@ -21,6 +22,7 @@ export default function MultiSelect({
   onChange,
   options,
   placeholder = "Select or type...",
+  disabled = false,
 }: MultiSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState("");
@@ -83,41 +85,54 @@ export default function MultiSelect({
     <div ref={containerRef} className="relative w-full text-xs">
       <div 
         onClick={() => {
+          if (disabled) return;
           setIsOpen(true);
           inputRef.current?.focus();
         }}
-        className="min-h-[32px] w-full flex flex-wrap items-center gap-1.5 px-3 py-1.5 bg-slate-50 dark:bg-slate-900/40 border border-slate-250 dark:border-slate-800 rounded-md focus-within:ring-1 focus-within:ring-[#0066cc]/45 focus-within:border-[#0066cc]/60 transition-all cursor-text"
+        className={`min-h-[32px] w-full flex flex-wrap items-center gap-1.5 px-3 py-1.5 rounded-md transition-all ${
+          disabled 
+            ? "bg-slate-100/50 dark:bg-slate-900/10 border border-slate-200/60 dark:border-slate-800/40 text-slate-500 cursor-not-allowed" 
+            : "bg-slate-50 dark:bg-slate-900/40 border border-slate-250 dark:border-slate-800 focus-within:ring-1 focus-within:ring-[#0066cc]/45 focus-within:border-[#0066cc]/60 cursor-text"
+        }`}
       >
         {selectedValues.map((val) => (
           <span 
             key={val}
-            className="inline-flex items-center gap-1 bg-[#05375c]/10 dark:bg-sky-500/10 text-[#05375c] dark:text-sky-300 px-2 py-0.5 rounded font-semibold select-none border border-[#05375c]/20 dark:border-sky-500/20"
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded font-semibold select-none border ${
+              disabled
+                ? "bg-slate-200/40 dark:bg-slate-800/40 text-slate-550 dark:text-slate-400 border-slate-300/35 dark:border-slate-700/30"
+                : "bg-[#05375c]/10 dark:bg-sky-500/10 text-[#05375c] dark:text-sky-300 border-[#05375c]/20 dark:border-sky-500/20"
+            }`}
           >
             {val}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleRemove(val);
-              }}
-              className="text-[#05375c]/60 hover:text-[#05375c] dark:text-sky-300/60 dark:hover:text-white transition-colors cursor-pointer"
-            >
-              <X className="w-3 h-3" />
-            </button>
+            {!disabled && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRemove(val);
+                }}
+                className="text-[#05375c]/60 hover:text-[#05375c] dark:text-sky-300/60 dark:hover:text-white transition-colors cursor-pointer"
+              >
+                <X className="w-3 h-3" />
+              </button>
+            )}
           </span>
         ))}
-        <input
-          ref={inputRef}
-          type="text"
-          value={inputValue}
-          onChange={(e) => {
-            setInputValue(e.target.value);
-            setIsOpen(true);
-          }}
-          onKeyDown={handleKeyDown}
-          placeholder={selectedValues.length === 0 ? placeholder : ""}
-          className="flex-1 min-w-[120px] bg-transparent border-none p-0 focus:outline-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:text-xs"
-        />
+        {!disabled && (
+          <input
+            ref={inputRef}
+            type="text"
+            value={inputValue}
+            onChange={(e) => {
+              setInputValue(e.target.value);
+              setIsOpen(true);
+            }}
+            onKeyDown={handleKeyDown}
+            placeholder={selectedValues.length === 0 ? placeholder : ""}
+            className="flex-1 min-w-[120px] bg-transparent border-none p-0 focus:outline-none text-slate-800 dark:text-slate-100 placeholder:text-slate-400 placeholder:text-xs"
+          />
+        )}
       </div>
 
       {isOpen && (
