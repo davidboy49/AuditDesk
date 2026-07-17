@@ -38,7 +38,8 @@ import {
   createProjectAction, 
   addAttachmentAction, 
   deleteAttachmentAction,
-  deleteProjectAction 
+  deleteProjectAction,
+  sendEmailNotificationAction
 } from "@/app/actions";
 
 interface PlanningClientProps {
@@ -59,7 +60,6 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
   // Search filter
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
-  const [emailAlert, setEmailAlert] = useState<{ to: string; subject: string } | null>(null);
 
   // Selected project details edit state
   const selectedProject = projects.find(p => p.id === selectedProjectId);
@@ -82,29 +82,29 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
   const [isPicDropdownOpen, setIsPicDropdownOpen] = useState(false);
 
   // Additional screen-matching properties (session local persistence)
-  const [editObjectives, setEditObjectives] = useState("<p>Enter audit objectives here...</p>");
-  const [editRiskProcess, setEditRiskProcess] = useState("<p>Map process links here...</p>");
-  const [editRiskClass, setEditRiskClass] = useState("<p>Enter classification logic...</p>");
-  const [editOpEx, setEditOpEx] = useState("<p>Describe the audit technique and approach...</p>");
-  const [editFieldwork, setEditFieldwork] = useState("<p>Describe how data inconsistencies will trigger specific fieldwork actions...</p>");
-  const [editOutcome, setEditOutcome] = useState("<p>Detail the expected findings, reports, and corrective action plans...</p>");
-  const [editDataRequestType, setEditDataRequestType] = useState("<p>Define the formats, sample counts, and audit logs required for secure transfer.</p>");
-  const [editFocusArea, setEditFocusArea] = useState("<p>Highlight the high-risk transaction zones, sensitive credentials storage, and cloud service endpoints.</p>");
+  const [editObjectives, setEditObjectives] = useState("");
+  const [editRiskProcess, setEditRiskProcess] = useState("");
+  const [editRiskClass, setEditRiskClass] = useState("");
+  const [editOpEx, setEditOpEx] = useState("");
+  const [editFieldwork, setEditFieldwork] = useState("");
+  const [editOutcome, setEditOutcome] = useState("");
+  const [editDataRequestType, setEditDataRequestType] = useState("");
+  const [editFocusArea, setEditFocusArea] = useState("");
   
   // Timeline states
   const [editTimelinePresDate, setEditTimelinePresDate] = useState("");
-  const [editTimelineNotificationDate, setEditTimelineNotificationDate] = useState("2026-07-09");
-  const [editTimelineFieldWorkStart, setEditTimelineFieldWorkStart] = useState("2026-07-20");
-  const [editTimelineFieldWorkEnd, setEditTimelineFieldWorkEnd] = useState("2026-07-31");
-  const [editTimelineFindingReportOffset, setEditTimelineFindingReportOffset] = useState(3);
-  const [editTimelineFinalReportOffset, setEditTimelineFinalReportOffset] = useState(7);
+  const [editTimelineNotificationDate, setEditTimelineNotificationDate] = useState("");
+  const [editTimelineFieldWorkStart, setEditTimelineFieldWorkStart] = useState("");
+  const [editTimelineFieldWorkEnd, setEditTimelineFieldWorkEnd] = useState("");
+  const [editTimelineFindingReportOffset, setEditTimelineFindingReportOffset] = useState(0);
+  const [editTimelineFinalReportOffset, setEditTimelineFinalReportOffset] = useState(0);
 
   // Approvals states
   const [editPreparedByName, setEditPreparedByName] = useState("");
-  const [editPreparedByTitle, setEditPreparedByTitle] = useState("Lead Auditor");
+  const [editPreparedByTitle, setEditPreparedByTitle] = useState("");
   const [editPreparedDate, setEditPreparedDate] = useState("");
   const [editApprovedByName, setEditApprovedByName] = useState("");
-  const [editApprovedByTitle, setEditApprovedByTitle] = useState("Head of Department");
+  const [editApprovedByTitle, setEditApprovedByTitle] = useState("");
   const [editApprovedDate, setEditApprovedDate] = useState("");
 
   const formatDateString = (dateStr: string) => {
@@ -156,28 +156,28 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     
     if (editWorkflowStage !== (selectedProject.workflowStage || "DRAFTING")) return true;
     
-    const dbObjectives = selectedProject.objectives || "<p>Ensure operational controls conform to local regulatory parameters, and technical data pathways remain uncompromised.</p>";
+    const dbObjectives = selectedProject.objectives || "";
     if (editObjectives !== dbObjectives) return true;
 
-    const dbRiskProcess = selectedProject.riskProcess || "<p>Verify VPC subnet logs meet security policy constraints, checking active firewalls against the compliance catalog.</p>";
+    const dbRiskProcess = selectedProject.riskProcess || "";
     if (editRiskProcess !== dbRiskProcess) return true;
 
-    const dbRiskClass = selectedProject.riskClass || "<p>Inherited vulnerabilities categorized by threat surface mapping per the 2026 enterprise risk guidelines.</p>";
+    const dbRiskClass = selectedProject.riskClass || "";
     if (editRiskClass !== dbRiskClass) return true;
 
-    const dbOpEx = selectedProject.opEx || "<p>Sample log outputs to trace system database transactions, using automated script checks to map discrepancies.</p>";
+    const dbOpEx = selectedProject.opEx || "";
     if (editOpEx !== dbOpEx) return true;
 
-    const dbFieldwork = selectedProject.fieldwork || "<p>Anomalies in database query latency will immediately trigger manual secondary auditor integrity checklists.</p>";
+    const dbFieldwork = selectedProject.fieldwork || "";
     if (editFieldwork !== dbFieldwork) return true;
 
-    const dbOutcome = selectedProject.outcome || "<p>Comprehensive summary output highlighting compliance metrics, critical findings logs, and recommended adjustments.</p>";
+    const dbOutcome = selectedProject.outcome || "";
     if (editOutcome !== dbOutcome) return true;
 
-    const dbDataRequest = selectedProject.dataRequestType || "<p>Define the formats, sample counts, and audit logs required for secure transfer.</p>";
+    const dbDataRequest = selectedProject.dataRequestType || "";
     if (editDataRequestType !== dbDataRequest) return true;
 
-    const dbFocusArea = selectedProject.focusArea || "<p>Highlight the high-risk transaction zones, sensitive credentials storage, and cloud service endpoints.</p>";
+    const dbFocusArea = selectedProject.focusArea || "";
     if (editFocusArea !== dbFocusArea) return true;
     
     const currentTimelineJson = JSON.stringify({
@@ -192,11 +192,11 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     if (!dbTimelineJson) {
       dbTimelineJson = JSON.stringify({
         presentationDate: "",
-        notificationDate: "2026-07-09",
-        fieldWorkStart: "2026-07-20",
-        fieldWorkEnd: "2026-07-31",
-        findingReportOffset: 3,
-        finalReportOffset: 7
+        notificationDate: "",
+        fieldWorkStart: "",
+        fieldWorkEnd: "",
+        findingReportOffset: 0,
+        finalReportOffset: 0
       });
     } else {
       try {
@@ -217,10 +217,10 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     if (!dbApprovalsJson) {
       dbApprovalsJson = JSON.stringify({
         preparedByName: "",
-        preparedByTitle: "Lead Auditor",
+        preparedByTitle: "",
         preparedDate: "",
         approvedByName: "",
-        approvedByTitle: "Head of Department",
+        approvedByTitle: "",
         approvedDate: ""
       });
     } else {
@@ -265,22 +265,22 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     setEditAttachments(proj.attachments || []);
 
     // Load scoping values from database fields, with default fallback templates if null/empty
-    setEditObjectives(proj.objectives || "<p>Ensure operational controls conform to local regulatory parameters, and technical data pathways remain uncompromised.</p>");
-    setEditRiskProcess(proj.riskProcess || "<p>Verify VPC subnet logs meet security policy constraints, checking active firewalls against the compliance catalog.</p>");
-    setEditRiskClass(proj.riskClass || "<p>Inherited vulnerabilities categorized by threat surface mapping per the 2026 enterprise risk guidelines.</p>");
-    setEditOpEx(proj.opEx || "<p>Sample log outputs to trace system database transactions, using automated script checks to map discrepancies.</p>");
-    setEditFieldwork(proj.fieldwork || "<p>Anomalies in database query latency will immediately trigger manual secondary auditor integrity checklists.</p>");
-    setEditOutcome(proj.outcome || "<p>Comprehensive summary output highlighting compliance metrics, critical findings logs, and recommended adjustments.</p>");
-    setEditDataRequestType(proj.dataRequestType || "<p>Define the formats, sample counts, and audit logs required for secure transfer.</p>");
-    setEditFocusArea(proj.focusArea || "<p>Highlight the high-risk transaction zones, sensitive credentials storage, and cloud service endpoints.</p>");
+    setEditObjectives(proj.objectives || "");
+    setEditRiskProcess(proj.riskProcess || "");
+    setEditRiskClass(proj.riskClass || "");
+    setEditOpEx(proj.opEx || "");
+    setEditFieldwork(proj.fieldwork || "");
+    setEditOutcome(proj.outcome || "");
+    setEditDataRequestType(proj.dataRequestType || "");
+    setEditFocusArea(proj.focusArea || "");
     
     let timelineObj = {
       presentationDate: "",
-      notificationDate: "2026-07-09",
-      fieldWorkStart: "2026-07-20",
-      fieldWorkEnd: "2026-07-31",
-      findingReportOffset: 3,
-      finalReportOffset: 7
+      notificationDate: "",
+      fieldWorkStart: "",
+      fieldWorkEnd: "",
+      findingReportOffset: 0,
+      finalReportOffset: 0
     };
     if (proj.opExTimeline) {
       try {
@@ -293,15 +293,15 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     setEditTimelineNotificationDate(timelineObj.notificationDate !== undefined ? timelineObj.notificationDate : "");
     setEditTimelineFieldWorkStart(timelineObj.fieldWorkStart !== undefined ? timelineObj.fieldWorkStart : "");
     setEditTimelineFieldWorkEnd(timelineObj.fieldWorkEnd !== undefined ? timelineObj.fieldWorkEnd : "");
-    setEditTimelineFindingReportOffset(timelineObj.findingReportOffset !== undefined ? timelineObj.findingReportOffset : 3);
-    setEditTimelineFinalReportOffset(timelineObj.finalReportOffset !== undefined ? timelineObj.finalReportOffset : 7);
+    setEditTimelineFindingReportOffset(timelineObj.findingReportOffset !== undefined ? timelineObj.findingReportOffset : 0);
+    setEditTimelineFinalReportOffset(timelineObj.finalReportOffset !== undefined ? timelineObj.finalReportOffset : 0);
     
     let approvalsObj = {
       preparedByName: "",
-      preparedByTitle: "Lead Auditor",
+      preparedByTitle: "",
       preparedDate: "",
       approvedByName: "",
-      approvedByTitle: "Head of Department",
+      approvedByTitle: "",
       approvedDate: ""
     };
     if (proj.approvals) {
@@ -312,10 +312,10 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
       }
     }
     setEditPreparedByName(approvalsObj.preparedByName || "");
-    setEditPreparedByTitle(approvalsObj.preparedByTitle || "Lead Auditor");
+    setEditPreparedByTitle(approvalsObj.preparedByTitle || "");
     setEditPreparedDate(approvalsObj.preparedDate || "");
     setEditApprovedByName(approvalsObj.approvedByName || "");
-    setEditApprovedByTitle(approvalsObj.approvedByTitle || "Head of Department");
+    setEditApprovedByTitle(approvalsObj.approvedByTitle || "");
     setEditApprovedDate(approvalsObj.approvedDate || "");
     
     // Close dropdown panels
@@ -506,34 +506,58 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     }
   };
 
+  const triggerEmailAlerts = (simulatedAlerts: Array<{ to: string; subject: string; body: string }>) => {
+    for (const alert of simulatedAlerts) {
+      window.dispatchEvent(new CustomEvent("send-simulated-email", { detail: alert }));
+    }
+  };
+
   const handleSubmitForApproval = async () => {
     if (!selectedProject) return;
     await saveStatusChange("SUBMITTED_FOR_APPROVAL");
-    const leadUser = users.find(u => u.name === editLead || u.id === editLead);
-    const toEmail = leadUser?.email || "sarah.lead@auditdesk.com";
-    setEmailAlert({
-      to: toEmail,
-      subject: `Audit Plan ${selectedProject.code} has been submitted for approval.`
+    const emailResult = await sendEmailNotificationAction("planning", selectedProject.id, {
+      status: "SUBMITTED_FOR_APPROVAL",
+      details: "The audit plan scoping and timelines have been submitted for approval review."
     });
+    if (emailResult.success) {
+      triggerEmailAlerts(emailResult.simulatedAlerts);
+    }
   };
-
+ 
   const handleApprovePlan = async () => {
+    if (!selectedProject) return;
     await saveStatusChange("RELEASED");
+    const emailResult = await sendEmailNotificationAction("planning", selectedProject.id, {
+      status: "RELEASED (APPROVED)",
+      details: "The audit plan has been officially approved and released by the Lead Auditor."
+    });
+    if (emailResult.success) {
+      triggerEmailAlerts(emailResult.simulatedAlerts);
+    }
   };
-
+ 
   const handleRejectPlan = async () => {
     if (!selectedProject) return;
     await saveStatusChange("PLANNING");
-    const leadUser = users.find(u => u.name === editLead || u.id === editLead);
-    const toEmail = leadUser?.email || "sarah.lead@auditdesk.com";
-    setEmailAlert({
-      to: toEmail,
-      subject: `Audit Plan ${selectedProject.code} was REJECTED by the approver. The plan has been reopened for editing. Please revise and resubmit.`
+    const emailResult = await sendEmailNotificationAction("planning", selectedProject.id, {
+      status: "REJECTED (REOPENED)",
+      details: "The audit plan was rejected by the approver. The status has reverted to Planning. Please revise the scoping documents and timelines."
     });
+    if (emailResult.success) {
+      triggerEmailAlerts(emailResult.simulatedAlerts);
+    }
   };
-
+ 
   const handleReopenPlan = async () => {
+    if (!selectedProject) return;
     await saveStatusChange("PLANNING");
+    const emailResult = await sendEmailNotificationAction("planning", selectedProject.id, {
+      status: "PLANNING (REOPENED)",
+      details: "The approval submission has been cancelled. The plan is now reopened for further editing."
+    });
+    if (emailResult.success) {
+      triggerEmailAlerts(emailResult.simulatedAlerts);
+    }
   };
 
   const handleCreateProject = async (e: React.FormEvent) => {
@@ -544,8 +568,8 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
       newName,
       newCode,
       "PLANNING",
-      "<p>Initial scoping document template. Replace this text with the audit boundaries.</p>",
-      "<p>Define work breakdown structure and scheduled interview nodes here.</p>",
+      "",
+      "",
       newStart,
       newEnd,
       newLead || null
@@ -666,8 +690,20 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     return matchesSearch && matchesStatus;
   });
 
-  const canModify = RBAC.canCreateProject(currentUser);
-  const isReadOnly = editStatus !== "PLANNING";
+  const isProjectMember = (proj: AuditProject | null) => {
+    if (!proj) return false;
+    if (currentUser.role === "ADMIN") return true;
+    if (proj.leadAuditorId === currentUser.id) return true;
+    const auditorsList = proj.auditorNames ? proj.auditorNames.split(",").map(s => s.trim()) : [];
+    if (auditorsList.includes(currentUser.name)) return true;
+    if (proj.auditorIds?.includes(currentUser.id)) return true;
+    const picList = proj.deptPicIds ? proj.deptPicIds.split(",") : [];
+    if (picList.includes(currentUser.id) || picList.includes(currentUser.name)) return true;
+    return false;
+  };
+
+  const canModify = true;
+  const isReadOnly = editStatus !== "PLANNING" || !isProjectMember(selectedProject || null);
   const leadAuditors = users.filter(u => u.role === "LEAD_AUDITOR" || u.role === "ADMIN");
 
   const statusOptions = [
@@ -701,7 +737,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   Document 1. Audit Plan
                 </div>
                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                  Scaffold New Audit Project
+                  Create New Audit Plan
                 </h2>
               </div>
               
@@ -724,7 +760,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                     {/* Row 1: Project Name */}
                     <tr className="border-b border-slate-300 dark:border-slate-800/80">
                       <td className="w-1/4 px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
-                        Project Name:
+                        Project Name*:
                       </td>
                       <td colSpan={3} className="px-4 py-2">
                         <input
@@ -732,7 +768,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                           required
                           value={newName}
                           onChange={(e) => setNewName(e.target.value)}
-                          placeholder="e.g. SOX Audit 2026"
+                          // placeholder="e.g. SOX Audit 2026"
                           className="w-full bg-transparent border-none p-0 text-xs focus:outline-none font-bold text-slate-800 dark:text-slate-100"
                         />
                       </td>
@@ -741,7 +777,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                     {/* Row 2: Project Code */}
                     <tr className="border-b border-slate-300 dark:border-slate-800/80">
                       <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
-                        Project Code:
+                        Project Code*:
                       </td>
                       <td colSpan={3} className="px-4 py-2">
                         <input
@@ -749,8 +785,8 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                           required
                           value={newCode}
                           onChange={(e) => setNewCode(e.target.value)}
-                          placeholder="e.g. AUD-2026-003"
-                          className="w-full bg-transparent border-none p-0 text-xs focus:outline-none font-mono text-slate-800 dark:text-slate-100"
+                          // placeholder="e.g. AUD-2026-003"
+                          className="w-full bg-transparent border-none p-0 text-xs focus:outline-none font-sans text-slate-800 dark:text-slate-100"
                         />
                       </td>
                     </tr>
@@ -758,7 +794,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                     {/* Row 3: Start Date + End Date */}
                     <tr className="border-b border-slate-300 dark:border-slate-800/80">
                       <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
-                        Start Date:
+                        Start Date*:
                       </td>
                       <td className="w-1/4 px-4 py-2 border-r border-slate-300 dark:border-slate-800/80">
                         <input
@@ -770,7 +806,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         />
                       </td>
                       <td className="w-1/4 px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
-                        End Date:
+                        End Date*:
                       </td>
                       <td className="px-4 py-2">
                         <input
@@ -819,7 +855,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   type="submit"
                   className="px-4 py-2 bg-[#05375c] text-white hover:bg-[#074776] text-xs font-bold rounded cursor-pointer transition-colors flex items-center gap-1.5"
                 >
-                  <Save className="w-3.5 h-3.5" /> Create Audit Planning
+                  <Save className="w-3.5 h-3.5" /> Create Audit Plan
                 </button>
               </div>
             </form>
@@ -882,7 +918,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                       proj.id === selectedProjectId ? "bg-slate-100/80 dark:bg-slate-800/50 font-medium" : ""
                     }`}
                   >
-                    <td className="px-6 py-4 font-mono text-slate-800 dark:text-slate-200">
+                    <td className="px-6 py-4 font-sans text-slate-800 dark:text-slate-200">
                       {proj.code}
                     </td>
                     <td 
@@ -907,7 +943,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                     <td className={`px-6 py-4 text-right font-bold ${statusColor}`}>
                       {statusText}
                     </td>
-                    {canModify && (
+                    {(currentUser.role === "ADMIN" || isProjectMember(proj)) && (
                       <td className="px-6 py-4 text-center no-print">
                         <button
                           type="button"
@@ -941,7 +977,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
             <div className="px-8 py-5 bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div className="space-y-1">
                 <div className="flex items-center gap-1.5 text-[15px] font-roboto text-400 font-bold">
-                  <span>Audit Plans</span>
+                  <span>Audit Plan</span>
                   <span>&gt;</span>
                   <span className="text-slate-600 font-roboto dark:text-slate-300">{selectedProject.code}</span>
                 </div>
@@ -954,7 +990,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                 />
                 
                 {/* Meta details row under header */}
-                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-1 text-[10px] font-mono text-slate-400">
+                <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-1 text-[10px] font-sans text-slate-400">
                   <span className="bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 border border-sky-100 dark:border-sky-900/50 px-2 py-0.5 rounded font-bold uppercase">
                     {editStatus === "PLANNING" ? "Planning" : editStatus === "SUBMITTED_FOR_APPROVAL" ? "Submitted for Approval" : editStatus === "RELEASED" ? "Released" : editStatus}
                   </span>
@@ -975,7 +1011,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
               {/* Save feedback indicator */}
               {saveFeedback && (
-                <div className="text-[10px] font-mono font-bold text-[#30b050] bg-green-500/10 dark:bg-green-500/5 border border-green-500/25 px-3 py-1.5 rounded animate-pulse shrink-0">
+                <div className="text-[10px] font-sans font-bold text-[#30b050] bg-green-500/10 dark:bg-green-500/5 border border-green-500/25 px-3 py-1.5 rounded animate-pulse shrink-0">
                   {saveFeedback}
                 </div>
               )}
@@ -1011,6 +1047,15 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
                 {editStatus === "SUBMITTED_FOR_APPROVAL" && (
                   <>
+                    {canModify && (
+                      <button
+                        type="button"
+                        onClick={handleReopenPlan}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded transition-colors cursor-pointer"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" /> Reopen Plan
+                      </button>
+                    )}
                     {(currentUser.role === "ADMIN" || currentUser.role === "LEAD_AUDITOR") ? (
                       <>
                         <button
@@ -1029,29 +1074,19 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         </button>
                       </>
                     ) : (
-                      <span className="text-xs font-mono font-bold text-blue-600 dark:text-sky-400 bg-blue-50 dark:bg-blue-950/40 px-3 py-2 rounded border border-blue-100 dark:border-blue-900/40">
-                        Waiting for Approval (Locked)
-                      </span>
+                      !canModify && (
+                        <span className="text-xs font-sans font-bold text-blue-600 dark:text-sky-400 bg-blue-50 dark:bg-blue-950/40 px-3 py-2 rounded border border-blue-100 dark:border-blue-900/40">
+                          Waiting for Approval (Locked)
+                        </span>
+                      )
                     )}
                   </>
                 )}
 
                 {editStatus === "RELEASED" && (
-                  <>
-                    {currentUser.role === "ADMIN" ? (
-                      <button
-                        type="button"
-                        onClick={handleReopenPlan}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded transition-colors cursor-pointer"
-                      >
-                        <RotateCcw className="w-3.5 h-3.5" /> Reopen Plan
-                      </button>
-                    ) : (
-                      <span className="text-xs font-mono font-bold text-[#30b050] bg-green-500/10 px-3 py-2 rounded border border-green-500/25">
-                        Approved & Released (Locked)
-                      </span>
-                    )}
-                  </>
+                  <span className="text-xs font-sans font-bold text-[#30b050] bg-green-500/10 px-3 py-2 rounded border border-green-500/25 font-sans">
+                    Approved & Released (Locked)
+                  </span>
                 )}
 
                 <button
@@ -1083,13 +1118,12 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   {/* Column 2: Lead & Auditors */}
                   <div className="space-y-4">
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-mono font-bold uppercase text-slate-500">Lead Auditor</label>
+                      <label className="text-xs font-sans font-bold uppercase text-slate-500">Lead Auditor</label>
                       <MultiSelect
                         selectedValues={editLead ? editLead.split(",").map(s => s.trim()).filter(Boolean) : []}
                         onChange={(values) => setEditLead(values.join(", "))}
                         disabled={isReadOnly}
                         options={users
-                          .filter(u => u.role === "LEAD_AUDITOR" || u.role === "ADMIN")
                           .map(u => ({
                             value: u.name,
                             label: u.name,
@@ -1100,7 +1134,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                     </div>
 
                     <div className="space-y-2 relative">
-                      <label className="text-xs font-mono font-bold uppercase text-slate-500">Auditors</label>
+                      <label className="text-xs font-sans font-bold uppercase text-slate-500">Auditors</label>
                       <MultiSelect
                         selectedValues={editAuditorIds}
                         onChange={(values) => setEditAuditorIds(values)}
@@ -1120,7 +1154,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   {/* Column 3: Department PIC */}
                   <div className="space-y-4 relative">
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-mono font-bold uppercase text-slate-500">Department PIC</label>
+                      <label className="text-xs font-sans font-bold uppercase text-slate-500">Department PIC</label>
                       <MultiSelect
                         selectedValues={editDeptPicIds}
                         onChange={(values) => setEditDeptPicIds(values)}
@@ -1139,10 +1173,10 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                 {/* Linked Items Section */}
                 {selectedProject && (
                   <div className="pt-4 border-t border-slate-150 dark:border-slate-800 space-y-2.5">
-                    <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-850 dark:text-slate-205">
+                    <h4 className="text-xs font-sans font-bold uppercase tracking-wider text-slate-850 dark:text-slate-205">
                       Linked Items
                     </h4>
-                    <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400 font-mono">
+                    <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400 font-sans">
                       {/* Meetings */}
                       {(() => {
                         const meetings = selectedProject.executionSchedules?.filter(e => e.language === "meeting") || [];
@@ -1226,7 +1260,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                       {/* Fallback if nothing is linked */}
                       {(!selectedProject.executionSchedules?.length && !selectedProject.findings?.length) && (
                         <div className="text-slate-400 italic text-[11px] font-sans">
-                          No linked meetings, schedules, or findings for this project plan.
+                          No linked meetings, schedules, or findings for this Audit Plan.
                         </div>
                       )}
                     </div>
@@ -1236,17 +1270,17 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
               {/* Panel 1: Objectives & Scope (Full Width) */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6 space-y-4 shadow-sm">
-                <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 border-b border-slate-150 dark:border-slate-800 pb-2">
+                <h3 className="text-md font-roboto font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200 border-b border-slate-150 dark:border-slate-800 pb-2">
                   I. Objectives & Scope
                 </h3>
 
                 <div className="space-y-1.5">
-                  <label className="text-[14px] font-mono font-bold text-slate-750 dark:text-slate-355 uppercase">1.1 Objectives</label>
+                  <label className="text-[14px] font-sans font-bold text-slate-750 dark:text-slate-355 uppercase">1.1 Objectives</label>
                   <RichEditor value={editObjectives} onChange={setEditObjectives} editable={!isReadOnly} />
                 </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[14px] font-mono font-bold text-slate-750 dark:text-slate-355 uppercase">1.2 Audit Scope</label>
+                  <label className="text-[14px] font-sans font-bold text-slate-750 dark:text-slate-355 uppercase">1.2 Audit Scope</label>
                   <RichEditor value={editScope} onChange={setEditScope} editable={!isReadOnly} />
                 </div>
               </div>
@@ -1254,7 +1288,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
               {/* Panel 2: Risk Mapping & Classification */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6 space-y-4">
                 <div className="flex justify-between items-center border-b border-slate-150 dark:border-slate-800 pb-2">
-                  <h3 className="text-[20px] text-xs font-mono font-bold uppercase tracking-wider text-slate-1000 border-b border-slate-150 dark:border-slate-800 pb-2">
+                  <h3 className="text-[20px] text-xs font-sans font-bold uppercase tracking-wider text-slate-1000 border-b border-slate-150 dark:border-slate-800 pb-2">
                     II. Map risk to department in charge
                   </h3>
                   {/* <button 
@@ -1268,11 +1302,11 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
                 <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="text-[15px] font-mono font-bold text-slate-800 uppercase">Risk meets company process</label>
+                    <label className="text-[15px] font-sans font-bold text-slate-800 uppercase">Risk meets company process</label>
                     <RichEditor value={editRiskProcess} onChange={setEditRiskProcess} editable={!isReadOnly} />
                   </div>
                   <div className="space-y-1.5">
-                    <label className=" text-[15px] font-mono font-bold text-slate-800 uppercase">Classify risk base on potential impact</label>
+                    <label className=" text-[15px] font-sans font-bold text-slate-800 uppercase">Classify risk base on potential impact</label>
                     <RichEditor value={editRiskClass} onChange={setEditRiskClass} editable={!isReadOnly} />
                   </div>
                 </div>
@@ -1280,24 +1314,24 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
               {/* Panel 3: Operational Excellence */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6 space-y-5">
-                <h3 className="text-[20px] text-xs font-mono font-bold uppercase tracking-wider text-slate-1000 border-b border-slate-150 dark:border-slate-800 pb-2">
+                <h3 className="text-[20px] text-xs font-sans font-bold uppercase tracking-wider text-slate-1000 border-b border-slate-150 dark:border-slate-800 pb-2">
                   III. Operational excellence technique/approach
                 </h3>
                 
                 <div className="space-y-1.5">
-                  <label className="text-[15px] font-mono font-bold text-slate-800 uppercase">Obtain data error to fieldwork mapping</label>
+                  <label className="text-[15px] font-sans font-bold text-slate-800 uppercase">Obtain data error to fieldwork mapping</label>
                   <RichEditor value={editOpEx} onChange={setEditOpEx} editable={!isReadOnly} />
                 </div>
 
                 <div className="pt-4 border-t border-slate-150 dark:border-slate-800/80 space-y-1">
-                  <h4 className="text-[20px] text-xs font-mono font-bold uppercase tracking-wider text-slate-1000 border-b border-slate-150 dark:border-slate-800 pb-2">IV. Obtain data error to fieldwork parameters</h4>
+                  <h4 className="text-[20px] text-xs font-sans font-bold uppercase tracking-wider text-slate-1000 border-b border-slate-150 dark:border-slate-800 pb-2">IV. Obtain data error to fieldwork parameters</h4>
                   <div className="space-y-4">
                     <div className="space-y-1.5">
-                      <label className="text-[15px] font-mono font-bold text-slate-800 uppercase">Type of data to request for information</label>
+                      <label className="text-[15px] font-sans font-bold text-slate-800 uppercase">Type of data to request for information</label>
                       <RichEditor value={editDataRequestType} onChange={setEditDataRequestType} editable={!isReadOnly} />
                     </div>
                     <div className="space-y-1.5">
-                      <label className="text-[15px] font-mono font-bold text-slate-800 uppercase">Which part need to focus on</label>
+                      <label className="text-[15px] font-sans font-bold text-slate-800 uppercase">Which part need to focus on</label>
                       <RichEditor value={editFocusArea} onChange={setEditFocusArea} editable={!isReadOnly} />
                     </div>
                   </div>
@@ -1305,7 +1339,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
               </div>
               {/* Panel 5: Operational Excellence Timeline */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6 space-y-6">
-                <h3 className="text-[20px] text-xs font-mono font-bold uppercase tracking-wider text-slate-1000 border-b border-slate-150 dark:border-slate-800 pb-2">
+                <h3 className="text-[20px] text-xs font-sans font-bold uppercase tracking-wider text-slate-1000 border-b border-slate-150 dark:border-slate-800 pb-2">
                   V. Operational Excellence timeline
                 </h3>
 
@@ -1313,7 +1347,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   {/* Left Column: Interactive Inputs */}
                   <div className="space-y-4">
                     <div className="space-y-1.5">
-                      <label className="text-[12px] font-mono font-bold text-slate-700 dark:text-slate-300 uppercase">Planning Presentation Date</label>
+                      <label className="text-[12px] font-sans font-bold text-slate-700 dark:text-slate-300 uppercase">Planning Presentation Date</label>
                       <input 
                         type="date" 
                         value={editTimelinePresDate}
@@ -1324,7 +1358,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                     </div>
 
                     <div className="space-y-1.5">
-                      <label className="text-[12px] font-mono font-bold text-slate-700 dark:text-slate-300 uppercase">Notification to Department in charge</label>
+                      <label className="text-[12px] font-sans font-bold text-slate-700 dark:text-slate-300 uppercase">Notification to Department in charge</label>
                       <input 
                         type="date" 
                         value={editTimelineNotificationDate}
@@ -1336,7 +1370,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-[12px] font-mono font-bold text-slate-700 dark:text-slate-300 uppercase">Field Work Start</label>
+                        <label className="text-[12px] font-sans font-bold text-slate-700 dark:text-slate-300 uppercase">Field Work Start</label>
                         <input 
                           type="date" 
                           value={editTimelineFieldWorkStart}
@@ -1346,7 +1380,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-[12px] font-mono font-bold text-slate-700 dark:text-slate-300 uppercase">Field Work End</label>
+                        <label className="text-[12px] font-sans font-bold text-slate-700 dark:text-slate-300 uppercase">Field Work End</label>
                         <input 
                           type="date" 
                           value={editTimelineFieldWorkEnd}
@@ -1359,7 +1393,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5">
-                        <label className="text-[12px] font-mono font-bold text-slate-700 dark:text-slate-300 uppercase">Finding/Observation Offset (Days)</label>
+                        <label className="text-[12px] font-sans font-bold text-slate-700 dark:text-slate-300 uppercase">Finding/Observation Offset (Days)</label>
                         <input 
                           type="number" 
                           value={editTimelineFindingReportOffset}
@@ -1369,7 +1403,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-[12px] font-mono font-bold text-slate-700 dark:text-slate-300 uppercase">Final Report Offset (Days)</label>
+                        <label className="text-[12px] font-sans font-bold text-slate-700 dark:text-slate-300 uppercase">Final Report Offset (Days)</label>
                         <input 
                           type="number" 
                           value={editTimelineFinalReportOffset}
@@ -1383,7 +1417,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
                   {/* Right Column: Visual Timeline Stepper */}
                   <div className="bg-slate-50 dark:bg-slate-950 rounded-lg p-5 border border-slate-100 dark:border-slate-900 space-y-4">
-                    <h4 className="text-[11px] font-mono font-bold uppercase tracking-wider text-slate-400">Timeline Milestone Preview</h4>
+                    <h4 className="text-[11px] font-sans font-bold uppercase tracking-wider text-slate-400">Timeline Milestone Preview</h4>
                     
                     <div className="relative pl-6 border-l-2 border-blue-500/30 dark:border-blue-900/40 space-y-6">
                       {/* Milestone 1 */}
@@ -1392,7 +1426,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                           <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
                         </div>
                         <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Planning Presentation Date</div>
-                        <div className="text-[11px] font-mono text-slate-500">{formatDateString(editTimelinePresDate)}</div>
+                        <div className="text-[11px] font-sans text-slate-500">{formatDateString(editTimelinePresDate)}</div>
                       </div>
 
                       {/* Milestone 2 */}
@@ -1401,7 +1435,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                           <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
                         </div>
                         <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Notification to Department in charge</div>
-                        <div className="text-[11px] font-mono text-slate-500">{formatDateString(editTimelineNotificationDate)}</div>
+                        <div className="text-[11px] font-sans text-slate-500">{formatDateString(editTimelineNotificationDate)}</div>
                       </div>
 
                       {/* Milestone 3 */}
@@ -1410,7 +1444,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                           <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
                         </div>
                         <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Field Work Duration</div>
-                        <div className="text-[11px] font-mono text-slate-500">
+                        <div className="text-[11px] font-sans text-slate-500">
                           {editTimelineFieldWorkStart || editTimelineFieldWorkEnd ? (
                             `${formatDateString(editTimelineFieldWorkStart)} to ${formatDateString(editTimelineFieldWorkEnd)}`
                           ) : (
@@ -1425,7 +1459,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                           <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
                         </div>
                         <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Finding/Observation Report Submission</div>
-                        <div className="text-[11px] font-mono text-slate-500">
+                        <div className="text-[11px] font-sans text-slate-500">
                           {formatDateString(getCalculatedDate(editTimelineFieldWorkEnd, editTimelineFindingReportOffset) || "")}
                           <span className="text-[10px] text-slate-400 ml-1.5">({editTimelineFindingReportOffset} days after fieldwork)</span>
                         </div>
@@ -1437,7 +1471,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                           <div className="w-1.5 h-1.5 rounded-full bg-blue-500"></div>
                         </div>
                         <div className="text-xs font-bold text-slate-800 dark:text-slate-200">Final Report to Top Management</div>
-                        <div className="text-[11px] font-mono text-slate-500">
+                        <div className="text-[11px] font-sans text-slate-500">
                           {formatDateString(
                             getCalculatedDate(
                               getCalculatedDate(editTimelineFieldWorkEnd, editTimelineFindingReportOffset) || "", 
@@ -1453,20 +1487,20 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
               </div>
               {/* Panel 4: Fieldwork Strategy & Expected Outcomes */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6 space-y-4">
-                <h3 className="text-[20px] text-xs font-mono font-bold uppercase tracking-wider text-slate-1000 border-b border-slate-150 dark:border-slate-800 pb-2">
+                <h3 className="text-[20px] text-xs font-sans font-bold uppercase tracking-wider text-slate-1000 border-b border-slate-150 dark:border-slate-800 pb-2">
                   VI.Expected Outcomes
                 </h3>
 
                 <div className="space-y-4">
                   <div className="space-y-1.5">
-                    <label className="text-[15px] font-mono font-bold text-slate-800 uppercase">Expected Outcomes</label>
+                    <label className="text-[15px] font-sans font-bold text-slate-800 uppercase">Expected Outcomes</label>
                     <RichEditor value={editFieldwork} onChange={setEditFieldwork} editable={!isReadOnly} />
                   </div>
                 </div>
               </div>
               {/* Panel 7: Sign-off & Approvals */}
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6 space-y-6">
-                <h3 className="text-[20px] text-xs font-mono font-bold uppercase tracking-wider text-slate-1000 border-b border-slate-150 dark:border-slate-800 pb-2">
+                <h3 className="text-[20px] text-xs font-sans font-bold uppercase tracking-wider text-slate-1000 border-b border-slate-150 dark:border-slate-800 pb-2">
                   VII. Scoping Approvals & Sign-off
                 </h3>
 
@@ -1475,12 +1509,12 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   <div className="bg-slate-50 dark:bg-slate-950 p-5 rounded-lg border border-slate-100 dark:border-slate-855 space-y-4">
                     <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
                       <div className="w-2.5 h-2.5 rounded-full bg-blue-500"></div>
-                      <h4 className="text-[12px] font-mono font-bold text-slate-700 dark:text-slate-300 uppercase">Prepared By</h4>
+                      <h4 className="text-[12px] font-sans font-bold text-slate-700 dark:text-slate-300 uppercase">Prepared By</h4>
                     </div>
                     
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-slate-450 uppercase block mb-1">Name</label>
+                        <label className="text-[10px] font-sans font-bold text-slate-450 uppercase block mb-1">Name</label>
                         <input 
                           type="text" 
                           value={editPreparedByName}
@@ -1491,7 +1525,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-slate-450 uppercase block mb-1">Position</label>
+                        <label className="text-[10px] font-sans font-bold text-slate-450 uppercase block mb-1">Position</label>
                         <input 
                           type="text" 
                           value={editPreparedByTitle}
@@ -1502,7 +1536,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-slate-450 uppercase block mb-1">Date</label>
+                        <label className="text-[10px] font-sans font-bold text-slate-450 uppercase block mb-1">Date</label>
                         <input 
                           type="date" 
                           value={editPreparedDate}
@@ -1518,12 +1552,12 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   <div className="bg-slate-50 dark:bg-slate-950 p-5 rounded-lg border border-slate-100 dark:border-slate-855 space-y-4">
                     <div className="flex items-center gap-2 border-b border-slate-200 dark:border-slate-800 pb-2">
                       <div className="w-2.5 h-2.5 rounded-full bg-[#00cc66]"></div>
-                      <h4 className="text-[12px] font-mono font-bold text-slate-700 dark:text-slate-300 uppercase">Approved By</h4>
+                      <h4 className="text-[12px] font-sans font-bold text-slate-700 dark:text-slate-300 uppercase">Approved By</h4>
                     </div>
 
                     <div className="space-y-3">
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-slate-450 uppercase block mb-1">Name</label>
+                        <label className="text-[10px] font-sans font-bold text-slate-450 uppercase block mb-1">Name</label>
                         <input 
                           type="text" 
                           value={editApprovedByName}
@@ -1534,7 +1568,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-slate-450 uppercase block mb-1">Position</label>
+                        <label className="text-[10px] font-sans font-bold text-slate-450 uppercase block mb-1">Position</label>
                         <input 
                           type="text" 
                           value={editApprovedByTitle}
@@ -1545,7 +1579,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         />
                       </div>
                       <div>
-                        <label className="text-[10px] font-mono font-bold text-slate-450 uppercase block mb-1">Date</label>
+                        <label className="text-[10px] font-sans font-bold text-slate-450 uppercase block mb-1">Date</label>
                         <input 
                           type="date" 
                           value={editApprovedDate}
@@ -1560,8 +1594,8 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
               </div>
               <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-6 space-y-4">
                 <div className="flex justify-between items-center border-b border-slate-150 dark:border-slate-800 pb-2">
-                  <h3 className="flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider text-slate-400">
-                    <FileText className="w-4 h-4" /> Plan Attachments & Filesss
+                  <h3 className="flex items-center gap-1.5 text-xs font-sans font-bold uppercase tracking-wider text-slate-400">
+                    <FileText className="w-4 h-4" /> Plan Attachments & Files
                   </h3>
                   {!isReadOnly && (
                     <div>
@@ -1600,7 +1634,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                               <div className="text-[11px] font-bold text-slate-700 dark:text-slate-300 truncate" title={file.fileName}>
                                 {file.fileName}
                               </div>
-                              <div className="text-[9px] font-mono text-slate-400">
+                              <div className="text-[9px] font-sans text-slate-400">
                                 {(file.fileSize / 1024).toFixed(1)} KB | {file.fileType.split("/")[1] || "doc"}
                               </div>
                             </div>
@@ -1636,7 +1670,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
             </div>
 
             {/* Modal Page Footer */}
-            <div className="px-8 py-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-[10px] font-mono text-slate-400 shrink-0">
+            <div className="px-8 py-4 bg-white dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-[10px] font-sans text-slate-400 shrink-0">
               <div>
                 <span>Audit ID: {selectedProject.code}-INTERNAL</span>
                 <span className="mx-2">|</span>
@@ -1668,28 +1702,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
         </div>
       )}
 
-      {/* Simulated Email Notification Banner */}
-      {emailAlert && (
-        <div className="fixed bottom-4 right-4 bg-slate-900 border border-slate-800 text-white rounded-lg shadow-xl p-4 max-w-sm z-[100] animate-slide-up flex gap-3">
-          <div className="bg-sky-500/10 p-2 rounded text-sky-400 h-fit">
-            <Mail className="w-5 h-5" />
-          </div>
-          <div className="flex-1 space-y-1">
-            <div className="text-[10px] font-mono text-sky-400 font-bold uppercase tracking-wider">Simulated Email Alert</div>
-            <div className="text-xs font-bold text-slate-100">To: {emailAlert.to}</div>
-            <p className="text-[10px] text-slate-400 leading-relaxed">{emailAlert.subject}</p>
-            <div className="pt-1 flex justify-end">
-              <button 
-                type="button"
-                onClick={() => setEmailAlert(null)}
-                className="text-[10px] font-bold text-sky-400 hover:underline cursor-pointer"
-              >
-                Dismiss
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+
 
     </div>
   );

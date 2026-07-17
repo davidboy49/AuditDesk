@@ -8,13 +8,16 @@ export interface UserGroup {
   id: string;
   name: string;
   description: string | null;
+  role: UserRole;
 }
+
+export type UserRole = "ADMIN" | "LEAD_AUDITOR" | "AUDITOR" | "AUDITEE";
 
 export interface User {
   id: string;
   email: string;
   name: string;
-  role: "ADMIN" | "LEAD_AUDITOR" | "AUDITOR" | "AUDITEE";
+  role: UserRole;
   departmentId: string | null;
   groupId: string | null;
   departmentName?: string | null;
@@ -59,8 +62,17 @@ export interface AuditProject {
   auditorIds?: string[]; // Array of selected auditor user IDs
   auditorNames?: string;
   attachments?: Attachment[];
-  findings?: { id: string; title: string; status: string }[];
-  executionSchedules?: { id: string; visitNumber: string; language: string; organization: string; ownerName?: string; lastModifiedBy?: string }[];
+  findings?: {
+    id: string;
+    title: string;
+    description?: string;
+    status: string;
+    severity?: string;
+    recommendation?: string;
+    auditorName?: string;
+    createdAt?: string;
+  }[];
+  executionSchedules?: { id: string; visitNumber: string; language: string; status?: string; organization: string; ownerName?: string; lastModifiedBy?: string }[];
 }
 
 export interface Finding {
@@ -107,6 +119,7 @@ export interface ExecutionSchedule {
   additionalAttendees: string;
   standards: string;
   language: string;
+  status: "DRAFT" | "RELEASED";
   objectives: string;
   scope: string;
   scheduleRows: string; // JSON
@@ -124,3 +137,4 @@ export const mockUsers: User[] = [
   { id: "user-4", email: "alice.auditee@auditdesk.com", name: "Alice Auditee", role: "AUDITEE", departmentId: "dept-2", groupId: "group-2" },
   { id: "user-5", email: "bob.developer@auditdesk.com", name: "Bob Developer", role: "AUDITEE", departmentId: "dept-1", groupId: null }
 ];
+

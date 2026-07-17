@@ -14,6 +14,8 @@ async function main() {
   await prisma.user.deleteMany();
   await prisma.department.deleteMany();
   await prisma.userGroup.deleteMany();
+  await prisma.smtpConfig.deleteMany();
+  await prisma.emailTemplate.deleteMany();
 
   console.log("Cleared existing database records.");
 
@@ -35,13 +37,13 @@ async function main() {
 
   // 2. Seed User Groups
   const group1 = await prisma.userGroup.create({
-    data: { id: "group-1", name: "Internal Audit Team", description: "Certified internal auditors and leads" }
+    data: { id: "group-1", name: "Internal Audit Team", description: "Certified internal auditors and leads", role: "AUDITOR" }
   });
   const group2 = await prisma.userGroup.create({
-    data: { id: "group-2", name: "Risk Management Committee", description: "Executive oversight for enterprise risks" }
+    data: { id: "group-2", name: "Risk Management Committee", description: "Executive oversight for enterprise risks", role: "LEAD_AUDITOR" }
   });
   const group3 = await prisma.userGroup.create({
-    data: { id: "group-3", name: "External Auditing Partner", description: "Contracted external compliance specialists" }
+    data: { id: "group-3", name: "External Auditing Partner", description: "Contracted external compliance specialists", role: "AUDITOR" }
   });
 
   console.log("User Groups seeded.");
@@ -157,6 +159,51 @@ async function main() {
   });
 
   console.log("Findings seeded.");
+
+  // 6. Seed SMTP Config
+  await prisma.smtpConfig.create({
+    data: {
+      id: "default",
+      host: "smtp.mailtrap.io",
+      port: 2525,
+      username: "",
+      password: "",
+      secure: false,
+      fromEmail: "alerts@auditdesk.com"
+    }
+  });
+
+  // 7. Seed Email Templates
+  await prisma.emailTemplate.create({
+    data: {
+      id: "planning",
+      subject: "Audit Planning Scoping Update - {{projectCode}}",
+      body: "<p>Hello {{recipientName}},</p><p>An update has occurred on the scoping document for <strong>{{projectName}}</strong> ({{projectCode}}).</p><p>Current Status: <strong>{{status}}</strong></p><p>Details: {{details}}</p><p>Best regards,<br/>Audit Management System</p>"
+    }
+  });
+  await prisma.emailTemplate.create({
+    data: {
+      id: "meetings",
+      subject: "Open Meeting Schedule Invitation - {{projectName}}",
+      body: "<p>Hello {{recipientName}},</p><p>A new open alignment meeting has been scheduled for <strong>{{projectName}}</strong> ({{projectCode}}).</p><p>Organization: {{organization}}</p><p>Visit Date: {{visitDate}}</p><p>Owner: {{ownerName}}</p><p>Please review and join the meeting ledger.</p>"
+    }
+  });
+  await prisma.emailTemplate.create({
+    data: {
+      id: "schedule",
+      subject: "Execution Schedule Released - {{projectCode}}",
+      body: "<p>Hello {{recipientName}},</p><p>An execution schedule and document request list has been updated for <strong>{{projectName}}</strong> ({{projectCode}}).</p><p>Audit Period: {{auditPeriod}}</p><p>Lead Execution: {{leadExecution}}</p><p>Standards: {{standards}}</p><p>Please upload the requested files as soon as possible.</p>"
+    }
+  });
+  await prisma.emailTemplate.create({
+    data: {
+      id: "findings",
+      subject: "New Audit Finding Registered - {{projectCode}}",
+      body: "<p>Hello {{recipientName}},</p><p>A new compliance nonconformity has been logged under <strong>{{projectName}}</strong> ({{projectCode}}).</p><p>Finding: <strong>{{findingTitle}}</strong></p><p>Severity: <strong>{{severity}}</strong></p><p>Recommendation: {{recommendation}}</p>"
+    }
+  });
+
+  console.log("SMTP Config and Email Templates seeded.");
   console.log("SQLite database dev.db seeding completed successfully!");
 }
 

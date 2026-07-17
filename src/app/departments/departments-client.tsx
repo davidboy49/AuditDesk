@@ -155,7 +155,7 @@ export default function DepartmentsClient({
 
       {/* Feedback notifier */}
       {feedback && (
-        <div className="fixed bottom-8 right-8 z-50 flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-mono font-semibold animate-slide-up border border-[#05375c]">
+        <div className="fixed bottom-8 right-8 z-50 flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c]">
           <span>{feedback}</span>
         </div>
       )}
@@ -213,7 +213,7 @@ export default function DepartmentsClient({
               })}
               {filteredDepartments.length === 0 && (
                 <tr>
-                  <td colSpan={2} className="px-12 py-8 text-center text-slate-400 font-mono text-xs">
+                  <td colSpan={2} className="px-12 py-8 text-center text-slate-400 font-sans text-xs">
                     No departments found.
                   </td>
                 </tr>
@@ -232,7 +232,7 @@ export default function DepartmentsClient({
             {/* Modal Header */}
             <div className="px-6 py-4 bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
               <h3 className="font-bold text-sm tracking-wider text-[#05375c] dark:text-accent font-sans">
-                <span className="uppercase text-xs font-mono font-bold text-slate-500 mr-1.5">CREATE NEW</span>
+                <span className="uppercase text-xs font-sans font-bold text-slate-500 mr-1.5">CREATE NEW</span>
                 <span className="text-slate-800 dark:text-slate-100">Department</span>
               </h3>
               <button 

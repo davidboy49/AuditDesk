@@ -20,7 +20,9 @@ import {
   Building,
   CalendarCheck,
   History,
-  MessageSquare
+  MessageSquare,
+  Settings as SettingsIcon,
+  X
 } from "lucide-react";
 import { mockUsers, User } from "@/lib/mockData";
 
@@ -36,6 +38,57 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
   const [activeUser, setActiveUser] = useState<User>(currentUser);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [auditModuleOpen, setAuditModuleOpen] = useState(true);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    const savedAvatar = localStorage.getItem(`avatar_${activeUser.id}`);
+    setAvatarUrl(savedAvatar || null);
+  }, [activeUser.id]);
+
+  useEffect(() => {
+    const syncAvatar = () => {
+      const savedAvatar = localStorage.getItem(`avatar_${activeUser.id}`);
+      setAvatarUrl(savedAvatar || null);
+    };
+    window.addEventListener("avatar-changed", syncAvatar);
+    return () => window.removeEventListener("avatar-changed", syncAvatar);
+  }, [activeUser.id]);
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const base64 = reader.result as string;
+      localStorage.setItem(`avatar_${activeUser.id}`, base64);
+      setAvatarUrl(base64);
+      window.dispatchEvent(new Event("avatar-changed"));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const [simulatedAlerts, setSimulatedAlerts] = useState<Array<{ id: string; to: string; subject: string; body: string }>>([]);
+
+  useEffect(() => {
+    const handleSimulatedEmail = (e: Event) => {
+      const customEvent = e as CustomEvent<{ to: string; subject: string; body: string }>;
+      const { to, subject, body } = customEvent.detail;
+      const newAlert = {
+        id: Math.random().toString(36).substring(7),
+        to,
+        subject,
+        body
+      };
+      setSimulatedAlerts(prev => [...prev, newAlert]);
+      // Auto-remove after 8 seconds
+      setTimeout(() => {
+        setSimulatedAlerts(prev => prev.filter(a => a.id !== newAlert.id));
+      }, 8000);
+    };
+
+    window.addEventListener("send-simulated-email" as any, handleSimulatedEmail);
+    return () => window.removeEventListener("send-simulated-email" as any, handleSimulatedEmail);
+  }, []);
 
   // Initialize theme from localStorage or document class
   useEffect(() => {
@@ -82,6 +135,7 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
 
   if (activeUser.role === "ADMIN") {
     menuItems.push({ name: "Activity Logs", href: "/logs", icon: History });
+    menuItems.push({ name: "System Settings", href: "/settings", icon: SettingsIcon });
   }
 
   // Dynamic breadcrumb matching screenshot structure
@@ -93,6 +147,7 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
     if (pathname.startsWith("/users")) return "Identity / User Management";
     if (pathname.startsWith("/departments")) return "Identity / Department Management";
     if (pathname.startsWith("/logs")) return "Administration / Activity Logs";
+    if (pathname.startsWith("/settings")) return "Administration / System Settings";
     return "Portal / Dashboard";
   };
 
@@ -107,7 +162,7 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
       >
         {/* Background H Watermark overlay */}
         <div className="absolute inset-0 opacity-5 pointer-events-none flex items-center justify-center overflow-hidden">
-          {/* <div className="text-[280px] font-bold select-none font-mono leading-none">H</div> */}
+          {/* <div className="text-[280px] font-bold select-none font-sans leading-none">H</div> */}
         </div>
 
         <div className="z-10">
@@ -118,11 +173,24 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
 
           {/* Profile Section - Centered avatar & name */}
           <div className="py-8 flex flex-col items-center justify-center border-b border-[#042844] space-y-3 bg-[#053254]/40">
-            <div className="w-20 h-20 rounded-full bg-slate-500/50 flex items-center justify-center border border-white/10 shadow-inner">
-              <UserIcon className="w-10 h-10 text-slate-300" />
-            </div>
+            <label className="w-20 h-20 rounded-full bg-slate-500/50 flex items-center justify-center border border-white/10 shadow-inner overflow-hidden cursor-pointer relative group hover:opacity-85 transition-opacity shrink-0">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <UserIcon className="w-10 h-10 text-slate-300" />
+              )}
+              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex items-center justify-center text-[9px] text-white font-sans tracking-wider transition-opacity uppercase font-bold">
+                Upload
+              </div>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleAvatarUpload}
+                className="hidden"
+              />
+            </label>
             <div className="text-center space-y-1">
-              <div className="text-xs text-slate-300 font-mono flex items-center justify-center gap-1">
+              <div className="text-xs text-slate-300 font-sans flex items-center justify-center gap-1">
                 <Lock className="w-3 h-3 text-slate-400" /> {activeUser.role}
               </div>
               <div className="font-bold text-sm tracking-wide uppercase text-white">
@@ -184,7 +252,7 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
 
         {/* Sidebar Footer info */}
         <div className="p-4 border-t border-[#042844] space-y-2 bg-[#042d4c]/30 text-center z-10">
-          <div className="text-[10px] text-slate-400 font-mono tracking-wider">
+          <div className="text-[10px] text-slate-400 font-sans tracking-wider">
             {activeUser.departmentId ? `DEPT: ${mockUsers.find(u => u.id === activeUser.id)?.departmentName || "SECURITY"}` : "GLOBAL ACCESS"}
           </div>
         </div>
@@ -212,7 +280,7 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
               <select
                 value={activeUser.id}
                 onChange={(e) => handleUserChange(e.target.value)}
-                className="bg-transparent text-slate-700 dark:text-slate-300 border-none text-[11px] font-mono focus:outline-none focus:ring-0 cursor-pointer"
+                className="bg-transparent text-slate-700 dark:text-slate-300 border-none text-[11px] font-sans focus:outline-none focus:ring-0 cursor-pointer"
               >
                 {mockUsers.map((u) => (
                   <option key={u.id} value={u.id} className="dark:bg-slate-900">
@@ -229,8 +297,12 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
             </button>
 
             {/* Profile Avatar */}
-            <div className="w-9 h-9 rounded-full bg-slate-300 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-200 border border-slate-200 dark:border-slate-800 select-none">
-              <span className="font-mono text-sm font-semibold">{activeUser.name.charAt(0)}</span>
+            <div className="w-9 h-9 rounded-full bg-slate-300 dark:bg-slate-700 flex items-center justify-center text-slate-600 dark:text-slate-200 border border-slate-200 dark:border-slate-800 select-none overflow-hidden shrink-0">
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Avatar" className="w-full h-full object-cover" />
+              ) : (
+                <span className="font-sans text-sm font-semibold">{activeUser.name.charAt(0)}</span>
+              )}
             </div>
           </div>
         </header>
@@ -246,6 +318,38 @@ export default function AppLayout({ children, currentUser }: AppLayoutProps) {
         <main className="flex-1 overflow-y-auto p-8 bg-slate-100 dark:bg-slate-950">
           {children}
         </main>
+      </div>
+
+      {/* Global Simulated SMTP Notification Stack */}
+      <div className="fixed bottom-6 left-6 z-[100] flex flex-col gap-3 max-w-sm w-full no-print">
+        {simulatedAlerts.map((alert) => (
+          <div 
+            key={alert.id} 
+            className="bg-slate-900 border border-slate-800 text-slate-100 p-4 rounded-lg shadow-2xl animate-slide-up flex flex-col gap-1.5 relative overflow-hidden"
+          >
+            {/* Top pulsing indicator */}
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] font-sans text-emerald-400 font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></span>
+                Simulated SMTP Alert
+              </div>
+              <button 
+                onClick={() => setSimulatedAlerts(prev => prev.filter(a => a.id !== alert.id))}
+                className="text-slate-400 hover:text-white cursor-pointer transition-colors"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div>
+              <div className="text-xs font-bold text-slate-200">To: {alert.to}</div>
+              <div className="text-xs font-semibold text-slate-300 mt-1">{alert.subject}</div>
+              <div 
+                className="text-[10px] text-slate-450 leading-relaxed mt-1 prose prose-invert max-w-none"
+                dangerouslySetInnerHTML={{ __html: alert.body }}
+              />
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

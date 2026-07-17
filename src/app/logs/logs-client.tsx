@@ -158,7 +158,7 @@ export default function LogsClient({ initialLogs, currentUser }: LogsClientProps
 
         {/* Action Type Filter */}
         <div className="flex items-center gap-2">
-          <label className="text-[10px] font-mono text-slate-400 uppercase font-bold shrink-0">Action Type:</label>
+          <label className="text-[10px] font-sans text-slate-400 uppercase font-bold shrink-0">Action Type:</label>
           <select
             value={actionFilter}
             onChange={(e) => setActionFilter(e.target.value)}
@@ -196,7 +196,7 @@ export default function LogsClient({ initialLogs, currentUser }: LogsClientProps
                 filteredLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors align-top">
                     {/* Timestamp */}
-                    <td className="px-6 py-4 font-mono text-[10px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                    <td className="px-6 py-4 font-sans text-[10px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
                       {formatDate(log.createdAt)}
                     </td>
                     
@@ -215,7 +215,7 @@ export default function LogsClient({ initialLogs, currentUser }: LogsClientProps
 
                     {/* Action Badge */}
                     <td className="px-6 py-4">
-                      <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${getActionBadgeClass(log.action)}`}>
+                      <span className={`inline-flex px-2 py-0.5 rounded text-[10px] font-sans font-bold border ${getActionBadgeClass(log.action)}`}>
                         {log.action}
                       </span>
                     </td>
@@ -258,7 +258,7 @@ export default function LogsClient({ initialLogs, currentUser }: LogsClientProps
             </div>
             <form onSubmit={handleAddLog} className="p-6 space-y-4">
               <div>
-                <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase mb-1.5">Action Code</label>
+                <label className="block text-[10px] font-sans font-bold text-slate-400 uppercase mb-1.5">Action Code</label>
                 <input
                   type="text"
                   required
@@ -270,7 +270,7 @@ export default function LogsClient({ initialLogs, currentUser }: LogsClientProps
               </div>
 
               <div>
-                <label className="block text-[10px] font-mono font-bold text-slate-400 uppercase mb-1.5">Mutation Details</label>
+                <label className="block text-[10px] font-sans font-bold text-slate-400 uppercase mb-1.5">Mutation Details</label>
                 <textarea
                   required
                   rows={4}

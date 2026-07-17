@@ -31,7 +31,7 @@ export default async function DashboardPage() {
             Welcome back, <span className="text-slate-800 dark:text-slate-200 font-semibold">{user.name}</span>. Below is the operational compliance status for Hanuman Estate.
           </p>
         </div>
-        <div className="flex items-center gap-1.5 px-2.5 py-1.2 bg-[#05375c]/10 dark:bg-accent/10 border border-[#05375c]/20 dark:border-accent/20 rounded text-[#05375c] dark:text-accent text-[10px] font-mono font-semibold self-start md:self-auto">
+        <div className="flex items-center gap-1.5 px-2.5 py-1.2 bg-[#05375c]/10 dark:bg-accent/10 border border-[#05375c]/20 dark:border-accent/20 rounded text-[#05375c] dark:text-accent text-[10px] font-sans font-semibold self-start md:self-auto">
           <ShieldCheck className="w-3.5 h-3.5" />
           Active Identity: {user.role}
         </div>
@@ -42,11 +42,11 @@ export default async function DashboardPage() {
         {/* Stat 1 */}
         <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xs space-y-3">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Total Audits</span>
+            <span className="text-[10px] text-slate-400 uppercase font-sans tracking-wider font-bold">Total Audits</span>
             <FolderLock className="w-4 h-4 text-slate-400" />
           </div>
           <div className="space-y-0.5">
-            <div className="text-2xl font-bold font-mono text-slate-800 dark:text-slate-100">{totalAudits}</div>
+            <div className="text-2xl font-bold font-sans text-slate-800 dark:text-slate-100">{totalAudits}</div>
             <div className="text-[10px] text-slate-400">
               <span className="text-green-600 font-bold">{activeAudits}</span> active, <span className="text-amber-500 font-bold">{planningAudits}</span> in planning
             </div>
@@ -56,11 +56,11 @@ export default async function DashboardPage() {
         {/* Stat 2 */}
         <div className="p-5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg shadow-xs space-y-3">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] text-slate-400 uppercase font-mono tracking-wider font-bold">Monitored Depts</span>
+            <span className="text-[10px] text-slate-400 uppercase font-sans tracking-wider font-bold">Monitored Depts</span>
             <Building2 className="w-4 h-4 text-slate-400" />
           </div>
           <div className="space-y-0.5">
-            <div className="text-2xl font-bold font-mono text-slate-800 dark:text-slate-100">{departments.length}</div>
+            <div className="text-2xl font-bold font-sans text-slate-800 dark:text-slate-100">{departments.length}</div>
             <div className="text-[10px] text-slate-400">
               Across {users.length} active employee profiles
             </div>
@@ -78,7 +78,7 @@ export default async function DashboardPage() {
             </div>
             <Link 
               href="/planning" 
-              className="text-[10px] text-[#0066cc] hover:underline flex items-center gap-0.5 font-bold font-mono"
+              className="text-[10px] text-[#0066cc] hover:underline flex items-center gap-0.5 font-bold font-sans"
             >
               Go Scoping <ArrowRight className="w-3 h-3" />
             </Link>
@@ -108,7 +108,7 @@ export default async function DashboardPage() {
 
                   return (
                     <tr key={proj.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
-                      <td className="px-5 py-3.5 font-mono text-slate-800 dark:text-slate-200">
+                      <td className="px-5 py-3.5 font-sans text-slate-800 dark:text-slate-200">
                         {proj.code}
                       </td>
                       <td className="px-5 py-3.5 text-[#0066cc] font-medium hover:underline">

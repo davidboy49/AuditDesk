@@ -12,10 +12,13 @@ import {
   FileDown, 
   X, 
   Calendar, 
-  Clock, 
+  Clock,
   Info,
   ChevronRight,
-  BookOpen
+  BookOpen,
+  Lock,
+  Unlock,
+  BadgeCheck
 } from "lucide-react";
 import { 
   User, 
@@ -27,7 +30,9 @@ import {
   createExecutionScheduleAction, 
   updateExecutionScheduleAction, 
   deleteExecutionScheduleAction,
-  getExecutionSchedulesAction
+  getExecutionSchedulesAction,
+  sendEmailNotificationAction,
+  sendMeetingReleaseNotificationAction
 } from "@/app/actions";
 import ActionToolbar from "@/components/ui/action-toolbar";
 import RichEditor from "@/components/ui/rich-editor";
@@ -131,6 +136,7 @@ export default function MeetingsClient({
   const [objectives, setObjectives] = useState("");
   const [scope, setScope] = useState("");
   const [rows, setRows] = useState<ScheduleRow[]>([]);
+  const [meetingStatus, setMeetingStatus] = useState<"DRAFT" | "RELEASED">("DRAFT");
   // Active row index for card editing
   const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
   // Draft state for unsaved edits in configuring slot
@@ -182,10 +188,30 @@ export default function MeetingsClient({
   const userOptions = users.map(u => ({
     value: u.name,
     label: u.name,
-    subLabel: `${u.role.replace("_", " ")}${u.email ? ` • ${u.email}` : ""}`
+    subLabel: `${u.role.replace("_", " ")}${u.email ? ` - ${u.email}` : ""}`
   }));
 
-  const canManage = currentUser.role !== "AUDITEE";
+  const isProjectMember = (proj: any) => {
+    if (!proj) return false;
+    if (currentUser.role === "ADMIN") return true;
+    if (proj.leadAuditorId === currentUser.id) return true;
+    const auditorsList = proj.auditorNames ? proj.auditorNames.split(",").map((s: string) => s.trim()) : [];
+    if (auditorsList.includes(currentUser.name)) return true;
+    if (proj.auditorIds?.includes(currentUser.id)) return true;
+    const picList = proj.deptPicIds ? proj.deptPicIds.split(",") : [];
+    if (picList.includes(currentUser.id) || picList.includes(currentUser.name)) return true;
+    return false;
+  };
+
+  const isScheduleOrMeetingAllowed = (sched: any) => {
+    if (!sched) return false;
+    if (currentUser.role === "ADMIN") return true;
+    if (sched.ownerName === currentUser.name || sched.lastModifiedBy === currentUser.name) return true;
+    const proj = projects.find(p => p.id === sched.projectId);
+    return isProjectMember(proj);
+  };
+
+  const canManage = true;
 
   const showFeedback = (msg: string) => {
     setFeedback(msg);
@@ -195,45 +221,6 @@ export default function MeetingsClient({
   // Prepopulate schedule fields when project is selected in Create mode
   const handleProjectSelect = (projId: string) => {
     setSelectedProjectId(projId);
-    if (!projId) return;
-
-    const proj = projects.find(p => p.id === projId);
-    if (!proj) return;
-
-    const leadUser = users.find(u => u.id === proj.leadAuditorId);
-    const orgVal = leadUser?.departmentName ? `${leadUser.departmentName} Department` : "Global Alignments Team";
-    setOrganization(orgVal);
-
-    setActualVisitDate(`${proj.startDate} to ${proj.endDate}`);
-    setAuditPeriod("Alignment Review");
-
-    setLeadExecution(leadUser?.name || "Sarah Lead");
-
-    const auditorNames = users
-      .filter(u => proj.auditorIds?.includes(u.id))
-      .map(u => u.name)
-      .join(", ") || "";
-    setTeamMembers(auditorNames);
-
-    const picNames = users
-      .filter(u => proj.deptPicIds?.split(",").includes(u.id))
-      .map(u => u.name)
-      .join(", ") || "";
-    setAdditionalAttendees(picNames);
-
-    setObjectives(proj.objectives || "");
-    setScope(proj.scope || "");
-
-    setRows([
-      {
-        day: "Item 1",
-        date: proj.startDate,
-        time: "09:00 AM - 10:00 AM",
-        activity: "<strong>Kickoff alignment meeting</strong>\n\n- Discuss scoping and timeline deliverables.",
-        conductBy: leadUser?.name || "Sarah Lead",
-        pIncharge: picNames.split(",")[0] || "Alice Auditee"
-      }
-    ]);
   };
 
   const openCreateModal = () => {
@@ -242,16 +229,17 @@ export default function MeetingsClient({
     setSelectedProjectId("");
     setOrganization("");
     setAddress("");
-    setVisitNumber("01");
+    setVisitNumber("");
     setActualVisitDate("");
     setAuditPeriod("");
     setLeadExecution("");
     setTeamMembers("");
     setAdditionalAttendees("");
-    setStandards("Alignment and Governance Meeting Protocol");
+    setStandards("");
     setObjectives("");
     setScope("");
     setRows([]);
+    setMeetingStatus("DRAFT");
     setIsModalOpen(true);
   };
 
@@ -267,6 +255,7 @@ export default function MeetingsClient({
     setTeamMembers(sched.teamMembers);
     setAdditionalAttendees(sched.additionalAttendees);
     setStandards(sched.standards);
+    setMeetingStatus((sched.status as any) || "DRAFT");
     setObjectives(sched.objectives);
     setScope(sched.scope);
     
@@ -294,8 +283,15 @@ export default function MeetingsClient({
     }
   }, [schedules]);
 
-  const handleSaveSchedule = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSaveSchedule = async (e?: React.FormEvent, nextStatus?: "DRAFT" | "RELEASED") => {
+    if (e) e.preventDefault();
+
+    const targetStatus = nextStatus || meetingStatus;
+    if (meetingStatus === "RELEASED" && targetStatus !== "DRAFT") {
+      showFeedback("This meeting record is already released. Reopen it before making edits.");
+      return;
+    }
+
     if (!selectedProjectId || !organization || !actualVisitDate) {
       alert("Please fill in the required fields.");
       return;
@@ -312,7 +308,8 @@ export default function MeetingsClient({
       teamMembers,
       additionalAttendees,
       standards,
-      language: "meeting", // Hardcoded flag to isolate meetings
+      language: "meeting",
+      status: targetStatus,
       objectives,
       scope,
       scheduleRows: JSON.stringify(rows),
@@ -321,27 +318,89 @@ export default function MeetingsClient({
     };
 
     try {
+      let savedId = selectedScheduleId;
+
       if (modalMode === "create") {
         const result = await createExecutionScheduleAction(payload);
         if (result) {
-          showFeedback("Open meeting record generated successfully.");
-          setIsModalOpen(false);
+          savedId = result.id || savedId;
+          setSelectedScheduleId(savedId || null);
+          setMeetingStatus(targetStatus);
           const fresh = await getExecutionSchedulesAction();
           setSchedules(fresh.filter((s: any) => s.language === "meeting"));
+
+          if (targetStatus === "RELEASED" && savedId) {
+            await sendMeetingReleaseNotificationAction(savedId);
+          } else {
+            const emailResult = await sendEmailNotificationAction("meetings", payload.projectId, {
+              organization: payload.organization,
+              visitDate: payload.actualVisitDate,
+              ownerName: payload.ownerName
+            });
+            if (emailResult.success) {
+              for (const alert of emailResult.simulatedAlerts) {
+                window.dispatchEvent(new CustomEvent("send-simulated-email", { detail: alert }));
+              }
+            }
+          }
+
+          showFeedback(targetStatus === "RELEASED" ? "Open meeting report released and locked." : "Open meeting record generated successfully.");
+          setIsModalOpen(false);
         }
       } else {
         if (!selectedScheduleId) return;
         const result = await updateExecutionScheduleAction(selectedScheduleId, payload);
         if (result) {
-          showFeedback("Open meeting changes updated.");
-          setIsModalOpen(false);
+          savedId = result.id || savedId;
+          setMeetingStatus(targetStatus);
           const fresh = await getExecutionSchedulesAction();
           setSchedules(fresh.filter((s: any) => s.language === "meeting"));
+
+          if (targetStatus === "RELEASED" && savedId) {
+            await sendMeetingReleaseNotificationAction(savedId);
+          } else {
+            const emailResult = await sendEmailNotificationAction("meetings", payload.projectId, {
+              organization: payload.organization,
+              visitDate: payload.actualVisitDate,
+              ownerName: payload.ownerName
+            });
+            if (emailResult.success) {
+              for (const alert of emailResult.simulatedAlerts) {
+                window.dispatchEvent(new CustomEvent("send-simulated-email", { detail: alert }));
+              }
+            }
+          }
+
+          showFeedback(targetStatus === "RELEASED" ? "Open meeting report released and locked." : "Open meeting changes updated.");
+          setIsModalOpen(false);
         }
       }
     } catch (err: any) {
       console.error(err);
       alert(`Save failed: ${err.message || err.toString()}`);
+    }
+  };
+
+  const handleReleaseSchedule = async () => {
+    await handleSaveSchedule(undefined, "RELEASED");
+  };
+
+  const handleReopenSchedule = async () => {
+    if (!selectedScheduleId) return;
+    try {
+      const result = await updateExecutionScheduleAction(selectedScheduleId, {
+        status: "DRAFT",
+        lastModifiedBy: currentUser.name
+      });
+      if (result) {
+        setMeetingStatus("DRAFT");
+        const fresh = await getExecutionSchedulesAction();
+        setSchedules(fresh.filter((s: any) => s.language === "meeting"));
+        showFeedback("Meeting record reopened for editing.");
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(`Reopen failed: ${err.message || err.toString()}`);
     }
   };
 
@@ -456,6 +515,7 @@ export default function MeetingsClient({
   }));
 
   const activeSchedule = schedules.find(x => x.id === selectedScheduleId);
+  const isLocked = meetingStatus === "RELEASED";
 
   return (
     <div className="space-y-6">
@@ -481,7 +541,7 @@ export default function MeetingsClient({
 
       {/* Feedback notifier */}
       {feedback && (
-        <div className="fixed bottom-8 right-8 z-50 flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-mono font-semibold animate-slide-up border border-[#05375c] no-print">
+        <div className="fixed bottom-8 right-8 z-50 flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c] no-print">
           <span>{feedback}</span>
         </div>
       )}
@@ -492,9 +552,9 @@ export default function MeetingsClient({
           
           {/* ActionToolbar */}
           <ActionToolbar
-            onCreate={canManage ? openCreateModal : undefined}
-            onEdit={canManage && selectedScheduleId && activeSchedule ? () => openEditModal(activeSchedule) : undefined}
-            onDelete={canManage && selectedScheduleId ? handleDeleteSchedule : undefined}
+            onCreate={openCreateModal}
+            onEdit={selectedScheduleId && activeSchedule && isScheduleOrMeetingAllowed(activeSchedule) ? () => openEditModal(activeSchedule) : undefined}
+            onDelete={selectedScheduleId && activeSchedule && isScheduleOrMeetingAllowed(activeSchedule) ? handleDeleteSchedule : undefined}
             onRefresh={() => {
               setSearchQuery("");
               setProjectFilter("ALL");
@@ -520,12 +580,13 @@ export default function MeetingsClient({
                   <th className="px-6 py-4">Organization</th>
                   <th className="px-6 py-4">Meeting Date</th>
                   <th className="px-6 py-4">Facilitator</th>
+                  <th className="px-6 py-4">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                 {filteredSchedules.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="px-6 py-8 text-center text-slate-400 italic">
+                    <td colSpan={6} className="px-6 py-8 text-center text-slate-400 italic">
                       No meetings matched filters or none have been created. Click "+" above to create a meeting alignment record.
                     </td>
                   </tr>
@@ -559,6 +620,11 @@ export default function MeetingsClient({
                       </td>
                       <td className="px-6 py-4.5 text-slate-700 dark:text-slate-300">
                         {s.leadExecution}
+                      </td>
+                      <td className="px-6 py-4.5">
+                        <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold ${s.status === "RELEASED" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"}`}>
+                          {s.status === "RELEASED" ? "Released" : "Draft"}
+                        </span>
                       </td>
                     </tr>
                   ))
@@ -596,6 +662,9 @@ export default function MeetingsClient({
                       <span className="flex items-center gap-1">
                         <Clock className="w-3.5 h-3.5" /> Last Modified: {activeSchedule.updatedAt ? new Date(activeSchedule.updatedAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "N/A"}
                       </span>
+                      <span className="flex items-center gap-1">
+                        <BadgeCheck className="w-3.5 h-3.5" /> Status: {meetingStatus === "RELEASED" ? "Released" : "Draft"}
+                      </span>
                     </>
                   ) : (
                     <>
@@ -619,13 +688,32 @@ export default function MeetingsClient({
                 >
                   <FileDown className="w-3.5 h-3.5" /> Export PDF
                 </button>
-                <button
-                  type="button"
-                  onClick={handleSaveSchedule}
-                  className="flex items-center gap-1.5 px-4 py-2 bg-[#05375c] text-white hover:bg-[#074776] text-xs font-bold rounded cursor-pointer"
-                >
-                  <Save className="w-3.5 h-3.5" /> Save Changes
-                </button>
+                {!isLocked ? (
+                  <button
+                    type="button"
+                    onClick={handleSaveSchedule}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-[#05375c] text-white hover:bg-[#074776] text-xs font-bold rounded cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5" /> Save Changes
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleReopenSchedule}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 text-white hover:bg-amber-600 text-xs font-bold rounded cursor-pointer"
+                  >
+                    <Unlock className="w-3.5 h-3.5" /> Reopen
+                  </button>
+                )}
+                {!isLocked ? (
+                  <button
+                    type="button"
+                    onClick={handleReleaseSchedule}
+                    className="flex items-center gap-1.5 px-4 py-2 bg-emerald-500 text-white hover:bg-emerald-600 text-xs font-bold rounded cursor-pointer"
+                  >
+                    <Lock className="w-3.5 h-3.5" /> Release
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
@@ -637,7 +725,7 @@ export default function MeetingsClient({
             </div>
 
             {/* Modal Scrollable Body */}
-            <form onSubmit={handleSaveSchedule} className="p-8 space-y-8 overflow-y-auto max-h-[86vh]">
+            <form onSubmit={handleSaveSchedule} className={`p-8 space-y-8 overflow-y-auto max-h-[86vh] ${isLocked ? "pointer-events-none select-none opacity-70" : ""}`}>
               
               {/* Linked Audit Plan and QR Code Card */}
               <div className="border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 p-5 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
@@ -657,7 +745,7 @@ export default function MeetingsClient({
                           className="w-full bg-transparent border-none p-0 text-xs focus:outline-none cursor-pointer text-slate-800 dark:text-slate-200 font-roboto font-bold"
                         >
                           <option value="">Choose Audit Plan...</option>
-                          {projects.map(p => (
+                          {projects.filter(isProjectMember).map(p => (
                             <option key={p.id} value={p.id} className="bg-white dark:bg-slate-900">
                               {p.code} - {p.name}
                             </option>
@@ -763,6 +851,7 @@ export default function MeetingsClient({
                             onChange={(values) => setLeadExecution(values.join(", "))}
                             options={userOptions}
                             placeholder="Select facilitators..."
+                            disabled={isLocked}
                           />
                         </td>
                       </tr>
@@ -779,6 +868,7 @@ export default function MeetingsClient({
                             onChange={(values) => setAdditionalAttendees(values.join(", "))}
                             options={userOptions}
                             placeholder="Select attendees..."
+                            disabled={isLocked}
                           />
                         </td>
                       </tr>
@@ -793,6 +883,7 @@ export default function MeetingsClient({
                             onChange={setObjectives}
                             placeholder="Objectives of this alignment session..."
                             editorClassName="min-h-[160px] max-h-[300px]"
+                            editable={!isLocked}
                           />
                         </td>
                       </tr>
@@ -808,6 +899,7 @@ export default function MeetingsClient({
                             onChange={setScope}
                             placeholder="Functional scope of the alignment..."
                             editorClassName="min-h-[120px] max-h-[250px]"
+                            editable={!isLocked}
                           />
                         </td>
                       </tr>
@@ -820,6 +912,7 @@ export default function MeetingsClient({
               {/* PDF Print Footer Note */}
               <div className="border-t border-slate-200 dark:border-slate-800 pt-4 text-[12px] font-roboto text-slate-400 leading-relaxed italic">
                 Note: Alignment agendas and decision minutes represent binding milestones of coordinated department.
+                {isLocked && <span className="not-italic text-amber-600 dark:text-amber-300">This record is released and locked. Use Reopen to edit.</span>}
               </div>
             </form>
           </div>

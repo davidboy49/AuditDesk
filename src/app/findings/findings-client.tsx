@@ -14,7 +14,6 @@ import {
   Clock, 
   Info,
   ChevronRight,
-  BookOpen,
   AlertTriangle
 } from "lucide-react";
 import { 
@@ -27,7 +26,8 @@ import {
   createExecutionScheduleAction as createFindingReportAction, 
   updateExecutionScheduleAction as updateFindingReportAction, 
   deleteExecutionScheduleAction as deleteFindingReportAction,
-  getExecutionSchedulesAction as getFindingReportsAction
+  getExecutionSchedulesAction as getFindingReportsAction,
+  sendEmailNotificationAction
 } from "@/app/actions";
 import { RBAC } from "@/lib/auth";
 import ActionToolbar from "@/components/ui/action-toolbar";
@@ -59,10 +59,23 @@ const isHtmlEmpty = (html?: string) => {
   return clean === "";
 };
 
+const escapeHtml = (value?: string) =>
+  (value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const plainTextToHtml = (value?: string) => {
+  const escaped = escapeHtml(value).trim();
+  if (!escaped) return "";
+  return `<p>${escaped.replace(/\r?\n/g, "<br />")}</p>`;
+};
 // Helpers to parse and format HTML5 time picker values
 const parseTimeRange = (timeStr: string) => {
   if (!timeStr) return { from: "09:00", to: "10:00" };
-  const parts = timeStr.split(/[-–]/);
+  const parts = timeStr.split(/-|\u2013/);
   const fromPart = parts[0]?.trim() || "09:00";
   const toPart = parts[1]?.trim() || "10:00";
 
@@ -144,8 +157,6 @@ export default function FindingsClient({
   const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
   // Draft state for unsaved edits in configuring slot
   const [draftRow, setDraftRow] = useState<FindingRow | null>(null);
-  // Expand/collapse parameters panel in Configure Slot popup
-  const [isParamsExpanded, setIsParamsExpanded] = useState(true);
 
   // Feedback notifier
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -191,10 +202,30 @@ export default function FindingsClient({
   const userOptions = users.map(u => ({
     value: u.name,
     label: u.name,
-    subLabel: `${u.role.replace("_", " ")}${u.email ? ` • ${u.email}` : ""}`
+    subLabel: `${u.role.replace("_", " ")}${u.email ? ` - ${u.email}` : ""}`, 
   }));
 
-  const canManage = currentUser.role !== "AUDITEE";
+  const isProjectMember = (proj: any) => {
+    if (!proj) return false;
+    if (currentUser.role === "ADMIN") return true;
+    if (proj.leadAuditorId === currentUser.id) return true;
+    const auditorsList = proj.auditorNames ? proj.auditorNames.split(",").map((s: string) => s.trim()) : [];
+    if (auditorsList.includes(currentUser.name)) return true;
+    if (proj.auditorIds?.includes(currentUser.id)) return true;
+    const picList = proj.deptPicIds ? proj.deptPicIds.split(",") : [];
+    if (picList.includes(currentUser.id) || picList.includes(currentUser.name)) return true;
+    return false;
+  };
+
+  const isScheduleOrMeetingAllowed = (sched: any) => {
+    if (!sched) return false;
+    if (currentUser.role === "ADMIN") return true;
+    if (sched.ownerName === currentUser.name || sched.lastModifiedBy === currentUser.name) return true;
+    const proj = projects.find(p => p.id === sched.projectId);
+    return isProjectMember(proj);
+  };
+
+  const canManage = true;
 
   const showFeedback = (msg: string) => {
     setFeedback(msg);
@@ -210,63 +241,62 @@ export default function FindingsClient({
     if (!proj) return;
 
     const leadUser = users.find(u => u.id === proj.leadAuditorId);
-    const orgVal = leadUser?.departmentName ? `${leadUser.departmentName} Department` : "Sales Distribution Function";
+    const orgVal = leadUser?.departmentName ? `${leadUser.departmentName} Department` : "";
     setOrganization(orgVal);
 
-    setActualVisitDate(`${proj.startDate} to ${proj.endDate}`);
-    setAuditPeriod("Compliance Gap Assessment");
+    const formatDate = (dateStr: string | Date) => {
+      if (!dateStr) return "";
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return "";
+      return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    };
+    const dateRange = proj.startDate && proj.endDate 
+      ? `${formatDate(proj.startDate)} to ${formatDate(proj.endDate)}` 
+      : "";
+    setActualVisitDate(dateRange);
+    setAuditPeriod("");
 
-    setLeadExecution(leadUser?.name || "EL Thany");
+    setLeadExecution(leadUser?.name || "");
 
     const auditorNames = users
       .filter(u => proj.auditorIds?.includes(u.id))
       .map(u => u.name)
-      .join(", ") || "Mao Sokpisith";
+      .join(", ") || "";
     setTeamMembers(auditorNames);
 
     const picNames = users
       .filter(u => proj.deptPicIds?.split(",").includes(u.id))
       .map(u => u.name)
-      .join(", ") || "By Vireak";
+      .join(", ") || "";
     setAdditionalAttendees(picNames);
 
     setObjectives(proj.objectives || "");
     setScope(proj.scope || "");
 
-    setRows([
-      {
-        date: "NCN #001/26",
-        time: "CRITICAL",
-        activity: "<strong>Noncompliance with outlet visit protocol (184/1640 outlets)</strong>\n\n- Detailed observed data indicates distributed sales teams failed to synchronize GPS node coordinates during physical customer visits.",
-        conductBy: leadUser?.name || "EL Thany",
-        pIncharge: "<strong>Corrective action:</strong> Implement real-time geo-fencing audits.\n\n<strong>Completed Corrective Action Date:</strong> 22 April 2026",
-        implication: "<p>Risk of undetected sales representative absences and inaccurate visit verification reports.</p>",
-        recommendation: "<p>Establish automatic alert system in core CRM for visits outside of designated geofence ranges.</p>"
-      },
-      {
-        date: "NCN #002/26",
-        time: "HIGH",
-        activity: "<strong>NCP Redemption related complaints to Distributor (Cash 139 & Can 163/1640 outlets)</strong>\n\n- Promotion redemptions processed without signature verification matches.",
-        conductBy: leadUser?.name || "EL Thany",
-        pIncharge: "<strong>Corrective action:</strong> Transition redemption records to dynamic QR validations.\n\n<strong>Completed Corrective Action Date:</strong> 30 May 2026",
-        implication: "<p>Distributors might claim unauthorized promotion redemptions resulting in financial leakages.</p>",
-        recommendation: "<p>Enforce mandatory OTP verification sent to customer phone before distributor can process promo redemptions.</p>"
-      }
-    ]);
+    const findingRows = (proj.findings || []).map((finding, index): FindingRow => ({
+      date: finding.createdAt ? formatDateString(finding.createdAt.slice(0, 10)) : `Finding #${index + 1}`,
+      time: finding.severity || "",
+      activity: `<strong>${escapeHtml(finding.title)}</strong>${plainTextToHtml(finding.description)}`,
+      conductBy: finding.auditorName || leadUser?.name || "",
+      pIncharge: "",
+      implication: finding.status ? `<p>Status: ${escapeHtml(finding.status.replace("_", " "))}</p>` : "",
+      recommendation: plainTextToHtml(finding.recommendation)
+    }));
+    setRows(findingRows);
   };
 
   const openCreateModal = () => {
     setModalMode("create");
     setSelectedProjectId("");
     setOrganization("");
-    setAddress("HB-HQ");
-    setVisitNumber("NCN #001/26");
+    setAddress("");
+    setVisitNumber("");
     setActualVisitDate("");
     setAuditPeriod("");
     setLeadExecution("");
     setTeamMembers("");
     setAdditionalAttendees("");
-    setStandards("Operational and Compliance Gaps in Sales Operation Execution");
+    setStandards("");
     setLanguage("finding");
     setObjectives("");
     setScope("");
@@ -344,10 +374,21 @@ export default function FindingsClient({
       if (modalMode === "create") {
         const result = await createFindingReportAction(payload);
         if (result) {
-          showFeedback("Audit findings report generated successfully.");
+          showFeedback("Audit findings report created successfully.");
           setIsModalOpen(false);
           const fresh = await getFindingReportsAction();
           setSchedules(fresh.filter((s: any) => s.language === "finding"));
+
+          const emailResult = await sendEmailNotificationAction("findings", payload.projectId, {
+            findingTitle: payload.organization,
+            severity: payload.standards,
+            recommendation: rows.map(r => r.recommendation).filter(Boolean).join(", ") || "Please review recommendations."
+          });
+          if (emailResult.success) {
+            for (const alert of emailResult.simulatedAlerts) {
+              window.dispatchEvent(new CustomEvent("send-simulated-email", { detail: alert }));
+            }
+          }
         }
       } else {
         if (!selectedScheduleId) return;
@@ -357,6 +398,17 @@ export default function FindingsClient({
           setIsModalOpen(false);
           const fresh = await getFindingReportsAction();
           setSchedules(fresh.filter((s: any) => s.language === "finding"));
+
+          const emailResult = await sendEmailNotificationAction("findings", payload.projectId, {
+            findingTitle: payload.organization,
+            severity: payload.standards,
+            recommendation: rows.map(r => r.recommendation).filter(Boolean).join(", ") || "Please review recommendations."
+          });
+          if (emailResult.success) {
+            for (const alert of emailResult.simulatedAlerts) {
+              window.dispatchEvent(new CustomEvent("send-simulated-email", { detail: alert }));
+            }
+          }
         }
       }
     } catch (err: any) {
@@ -511,6 +563,18 @@ export default function FindingsClient({
     setRows(updated);
   };
 
+  const completedFinalRowsCount = rows.filter(row => !!row.correctiveFinalDate).length;
+  const pendingFinalRowsCount = rows.filter(row => !row.correctiveFinalDate).length;
+
+  const markDraftRowFinalized = () => {
+    if (!draftRow) return;
+    const today = new Date();
+    const finalDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    setDraftRow({
+      ...draftRow,
+      correctiveFinalDate: finalDate
+    });
+  };
   const moveRowDown = (index: number) => {
     if (index === rows.length - 1) return;
     const updated = [...rows];
@@ -543,7 +607,7 @@ export default function FindingsClient({
       {feedback && (
         <div className="fixed top-4 right-4 bg-emerald-600 text-white px-4 py-2 rounded shadow-lg z-[60] flex items-center gap-2 animate-bounce">
           <Save className="w-4 h-4" />
-          <span className="text-xs font-bold font-mono">{feedback}</span>
+          <span className="text-xs font-bold font-sans">{feedback}</span>
         </div>
       )}
 
@@ -588,9 +652,9 @@ export default function FindingsClient({
           
           {/* ActionToolbar */}
           <ActionToolbar
-            onCreate={canManage ? openCreateModal : undefined}
-            onEdit={canManage && selectedScheduleId && activeSchedule ? () => openEditModal(activeSchedule) : undefined}
-            onDelete={canManage && selectedScheduleId ? handleDeleteSchedule : undefined}
+            onCreate={openCreateModal}
+            onEdit={selectedScheduleId && activeSchedule && isScheduleOrMeetingAllowed(activeSchedule) ? () => openEditModal(activeSchedule) : undefined}
+            onDelete={selectedScheduleId && activeSchedule && isScheduleOrMeetingAllowed(activeSchedule) ? handleDeleteSchedule : undefined}
             onRefresh={() => {
               setSearchQuery("");
               setProjectFilter("ALL");
@@ -634,7 +698,7 @@ export default function FindingsClient({
                         s.id === selectedScheduleId ? "bg-slate-100/80 dark:bg-slate-800/50 font-medium" : ""
                       }`}
                     >
-                      <td className="px-6 py-4.5 font-mono text-slate-700 dark:text-slate-300">
+                      <td className="px-6 py-4.5 font-sans text-slate-700 dark:text-slate-300">
                         {s.projectCode}
                       </td>
                       <td 
@@ -673,7 +737,7 @@ export default function FindingsClient({
             {/* Modal Header */}
             <div className="px-8 py-5 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center bg-slate-50 dark:bg-slate-900 rounded-t-lg shrink-0">
               <div>
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400">Ledger Configuration</span>
+                <span className="text-[10px] font-sans font-bold uppercase tracking-wider text-slate-400">Ledger Configuration</span>
                 <h2 className="text-base font-bold text-slate-800 dark:text-slate-100">
                   {modalMode === "create" ? "New Audit Findings Report" : `Edit Findings Report - ${projects.find(p => p.id === selectedProjectId)?.code}`}
                 </h2>
@@ -715,33 +779,35 @@ export default function FindingsClient({
             {/* Modal Scrollable Body */}
             <form onSubmit={handleSaveSchedule} className="p-8 space-y-8 overflow-y-auto max-h-[86vh]">
               
-              {/* Select Project Plan dropdown (only in create mode) */}
-              <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-850 space-y-3 no-print">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  <Info className="w-4 h-4 text-[#0066cc]" />
-                  <span>Choose an Audit Plan to extract scoping details and pre-populate findings fields.</span>
-                </div>
-                {modalMode === "create" ? (
-                  <select
-                    required
-                    value={selectedProjectId}
-                    onChange={(e) => handleProjectSelect(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 rounded-md px-3 py-2 text-xs focus:outline-none cursor-pointer text-slate-800 dark:text-slate-200"
-                  >
-                    <option value="">Choose Audit Plan...</option>
-                    {projects.map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.code} - {p.name} ({p.status})
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200">
-                    Linked Plan: {projects.find(p => p.id === selectedProjectId)?.code} - {projects.find(p => p.id === selectedProjectId)?.name}
+              {/* Linked Audit Plan strip */}
+              <div className="border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 p-5 shadow-sm space-y-3 no-print">
+                <div className="flex border border-slate-250 dark:border-slate-800 rounded-lg overflow-hidden h-12 items-center">
+                  <div className="bg-slate-50 dark:bg-slate-900/60 px-4 h-full flex items-center font-roboto font-bold text-xs text-slate-700 dark:text-slate-355 border-r border-slate-250 dark:border-slate-800 shrink-0 w-36">
+                    Linked Audit Plan
                   </div>
-                )}
+                  <div className="px-4 h-full flex items-center flex-1 bg-white dark:bg-slate-950">
+                    {modalMode === "create" ? (
+                      <select
+                        required
+                        value={selectedProjectId}
+                        onChange={(e) => handleProjectSelect(e.target.value)}
+                        className="w-full bg-transparent border-none p-0 text-xs focus:outline-none cursor-pointer text-slate-800 dark:text-slate-200 font-sans font-bold"
+                      >
+                        <option value="">Choose Audit Plan...</option>
+                        {projects.filter(isProjectMember).map(p => (
+                          <option key={p.id} value={p.id} className="bg-white dark:bg-slate-900">
+                            {p.code} - {p.name} ({p.status})
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <span className="text-xs font-sans font-bold text-slate-800 dark:text-slate-200">
+                        {projects.find(p => p.id === selectedProjectId)?.code} - {projects.find(p => p.id === selectedProjectId)?.name}
+                      </span>
+                    )}
+                  </div>
+                </div>
               </div>
-
               {/* Document Summary Info Grid matching the user's blue rounded border 2-column table design */}
               <div className="space-y-4">
                 <div className="border border-[#0066cc] rounded-lg relative z-30">
@@ -787,7 +853,7 @@ export default function FindingsClient({
                         </td>
                         <td className="px-6 py-3">
                           <input 
-                            type="text" 
+                            type="date" 
                             required
                             value={actualVisitDate}
                             onChange={(e) => setActualVisitDate(e.target.value)}
@@ -846,66 +912,46 @@ export default function FindingsClient({
                 </div>
               </div>
 
-              {/* Collapsible Scoping details preview block */}
-              <div className="bg-slate-50 dark:bg-slate-900/40 p-4 border border-slate-200 dark:border-slate-800 rounded-lg no-print">
-                <button
-                  type="button"
-                  onClick={() => setIsParamsExpanded(!isParamsExpanded)}
-                  className="flex items-center justify-between w-full font-bold text-xs text-slate-700 dark:text-slate-300 cursor-pointer focus:outline-none"
-                >
-                  <span className="flex items-center gap-1.5">
-                    <BookOpen className="w-4 h-4 text-[#0066cc]" />
-                    <span>Scoping Plan details extracted from linked plan</span>
-                  </span>
-                  <span className="text-[10px] text-[#0066cc] font-semibold hover:underline">
-                    {isParamsExpanded ? "Collapse Details" : "Expand Details"}
-                  </span>
-                </button>
-
-                {isParamsExpanded && (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mt-4 pt-4 border-t border-slate-200 dark:border-slate-800/80 text-xs">
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Objectives:</span>
-                      <div 
-                        className="prose dark:prose-invert text-[11px] leading-relaxed text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-3 rounded border border-slate-200 dark:border-slate-850"
-                        dangerouslySetInnerHTML={{ __html: objectives || "<p className='italic text-slate-400'>No objectives specified.</p>" }}
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[10px] font-mono text-slate-400 uppercase tracking-wider block">Scope Boundaries:</span>
-                      <div 
-                        className="prose dark:prose-invert text-[11px] leading-relaxed text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-900 p-3 rounded border border-slate-200 dark:border-slate-855"
-                        dangerouslySetInnerHTML={{ __html: scope || "<p className='italic text-slate-400'>No scope boundaries defined.</p>" }}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-
               {/* Dynamic Finding Rows Builder */}
               <div className="space-y-4">
-                <div className="flex justify-between items-center border-b border-slate-200 dark:border-slate-800 pb-2">
-                  <h3 className="text-xs font-mono font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                    Finding & Nonconformity Line Items
-                  </h3>
-                  {canManage && activeRowIndex === null && (
-                    <button
-                      type="button"
-                      onClick={startCreatingRow}
-                      className="flex items-center gap-1 px-3 py-1.5 bg-[#0066cc] text-white hover:bg-[#004499] text-[10px] font-bold rounded cursor-pointer transition-colors shadow-xs"
-                    >
-                      <Plus className="w-3.5 h-3.5" /> Add Finding Line
-                    </button>
-                  )}
+                <div className="space-y-3 border-b border-slate-200 dark:border-slate-800 pb-3">
+                  <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-3">
+                    <div>
+                      <h3 className="text-xs font-sans font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                        Finding & Nonconformity Line Items
+                      </h3>
+                      <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
+                        Final corrections remaining: {pendingFinalRowsCount} pending, {completedFinalRowsCount} completed.
+                      </p>
+                    </div>
+                    {canManage && activeRowIndex === null && (
+                      <button
+                        type="button"
+                        onClick={startCreatingRow}
+                        className="flex items-center gap-1 px-3 py-1.5 bg-[#0066cc] text-white hover:bg-[#004499] text-[10px] font-bold rounded cursor-pointer transition-colors shadow-xs self-start lg:self-auto"
+                      >
+                        <Plus className="w-3.5 h-3.5" /> Add Finding Line
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-700 dark:text-amber-400 text-[10px] font-bold uppercase tracking-wider border border-amber-500/15">
+                      Pending {pendingFinalRowsCount}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold uppercase tracking-wider border border-emerald-500/15">
+                      Completed {completedFinalRowsCount}
+                    </span>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 text-[10px] font-bold uppercase tracking-wider border border-slate-200 dark:border-slate-700">
+                      Total {rows.length}
+                    </span>
+                  </div>
                 </div>
                 {activeRowIndex !== null && draftRow && (
                   <div className="fixed inset-0 bg-slate-900/60 dark:bg-black/85 flex justify-center items-center z-[60] p-4 animate-fade-in no-print">
                     <div className="bg-white dark:bg-slate-900 w-full max-w-4xl md:max-w-5xl h-[90vh] max-h-[850px] rounded-lg shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-800 animate-slide-up">
-                      
-                      {/* Modal Header */}
                       <div className="px-6 py-4.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center shrink-0">
                         <div>
-                          <span className="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[9px] font-mono font-bold text-slate-555 dark:text-slate-400">
+                          <span className="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[9px] font-sans font-bold text-slate-555 dark:text-slate-400">
                             ROW #{activeRowIndex === -1 ? rows.length + 1 : activeRowIndex + 1}
                           </span>
                           <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-1">
@@ -921,43 +967,38 @@ export default function FindingsClient({
                         </button>
                       </div>
 
-                      {/* Modal Body (Scrollable) */}
                       <div className="p-6 space-y-4 flex-1 overflow-y-auto text-left">
-
-
                         <div className="space-y-4">
                           <div className="space-y-1.5">
-                            <label className="text-[14px] font-mono font-bold text-slate-750 dark:text-slate-355 uppercase block mb-1">Findings & Observation</label>
+                            <label className="text-[14px] font-sans font-bold text-slate-750 dark:text-slate-355 uppercase block mb-1">Findings & Observation</label>
                             <RichEditor 
                               value={draftRow.activity} 
                               onChange={(html) => setDraftRow({ ...draftRow, activity: html })} 
                             />
                           </div>
                           <div className="space-y-1.5">
-                            <label className="text-[14px] font-mono font-bold text-slate-750 dark:text-slate-355 uppercase block mb-1">Implication</label>
+                            <label className="text-[14px] font-sans font-bold text-slate-750 dark:text-slate-355 uppercase block mb-1">Implication</label>
                             <RichEditor 
                               value={draftRow.implication || ""} 
                               onChange={(html) => setDraftRow({ ...draftRow, implication: html })} 
                             />
                           </div>
                           <div className="space-y-1.5">
-                            <label className="text-[14px] font-mono font-bold text-slate-750 dark:text-slate-355 uppercase block mb-1">Recommendation</label>
+                            <label className="text-[14px] font-sans font-bold text-slate-750 dark:text-slate-355 uppercase block mb-1">Recommendation</label>
                             <RichEditor 
                               value={draftRow.recommendation || ""} 
                               onChange={(html) => setDraftRow({ ...draftRow, recommendation: html })} 
                             />
                           </div>
-                          {/* Management's response & corrective action Section */}
                           <div className="space-y-4 pt-2">
                             <div className="space-y-1">
-                              <label className="text-[14px] font-mono font-bold text-slate-750 dark:text-slate-355 uppercase block">
+                              <label className="text-[14px] font-sans font-bold text-slate-750 dark:text-slate-355 uppercase block">
                                 Management 's response & corrective action
                               </label>
                               <div className="border-b border-slate-250 dark:border-slate-800 my-2" />
                             </div>
 
                             <div className="space-y-4">
-                              {/* Corrective Action Sub-panel */}
                               <div className="border border-slate-200 dark:border-slate-800 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 rounded-md p-4 bg-white dark:bg-slate-950/20 space-y-4 transition-all">
                                 <div className="flex flex-col sm:flex-row sm:items-center gap-3">
                                   <span className="text-sm  font-bold text-slate-700 dark:text-slate-300 w-40 sm:shrink-0">
@@ -980,22 +1021,34 @@ export default function FindingsClient({
                                 </div>
                               </div>
 
-                              {/* Final Verification Sub-panel */}
                               <div className="border border-slate-200 dark:border-slate-800 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 rounded-md p-4 bg-white dark:bg-slate-950/20 space-y-4 transition-all">
-                                <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                                  <span className="text-sm font-bold text-slate-700 dark:text-slate-300 w-40 sm:shrink-0">
-                                    Corrective Final Date:
-                                  </span>
-                                  <input 
-                                    type="date"
-                                    required
-                                    value={draftRow.correctiveFinalDate || ""}
-                                    onChange={(e) => setDraftRow({ ...draftRow, correctiveFinalDate: e.target.value })}
-                                    className="px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer w-full max-w-[200px]"
-                                  />
+                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                  <div className="flex items-center gap-3">
+                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300 w-40 sm:shrink-0">
+                                      Corrective Final Date:
+                                    </span>
+                                    <input 
+                                      type="date"
+                                      required
+                                      value={draftRow.correctiveFinalDate || ""}
+                                      onChange={(e) => setDraftRow({ ...draftRow, correctiveFinalDate: e.target.value })}
+                                      className="px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer w-full max-w-[200px]"
+                                    />
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={markDraftRowFinalized}
+                                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md border text-xs font-bold transition-colors ${
+                                      draftRow.correctiveFinalDate
+                                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/15"
+                                        : "bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600"
+                                    }`}
+                                  >
+                                    {draftRow.correctiveFinalDate ? "Completed" : "Mark as completed"}
+                                  </button>
                                 </div>
                                 <div className="space-y-1.5">
-                                  <label className="text-sm  font-semibold text-slate-700 dark:text-slate-300 w-40 sm:shrink-0">Remarks</label>
+                                  <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 w-40 sm:shrink-0">Remarks</label>
                                   <RichEditor 
                                     value={draftRow.correctiveFinalRemarks || ""} 
                                     onChange={(html) => setDraftRow({ ...draftRow, correctiveFinalRemarks: html })} 
@@ -1007,7 +1060,6 @@ export default function FindingsClient({
                         </div>
                       </div>
 
-                      {/* Modal Footer */}
                       <div className="px-6 py-4.5 bg-slate-50 dark:bg-slate-900 border-t border-slate-200 dark:border-slate-800 flex gap-2 justify-end shrink-0">
                         <button
                           type="button"
@@ -1024,7 +1076,6 @@ export default function FindingsClient({
                           Apply Changes
                         </button>
                       </div>
-
                     </div>
                   </div>
                 )}
@@ -1050,13 +1101,13 @@ export default function FindingsClient({
                       ) : (
                         rows.map((row, idx) => (
                           <tr key={idx} className="align-top hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors">
-                            <td className="px-4 py-3.5 text-center font-mono text-slate-400 border-r border-slate-200 dark:border-slate-800">{idx + 1}</td>
+                            <td className="px-4 py-3.5 text-center font-sans text-slate-400 border-r border-slate-200 dark:border-slate-800">{idx + 1}</td>
                             <td className="px-4 py-3.5 border-r border-slate-200 dark:border-slate-800">
                               <div className="space-y-1.5">
                                 <div className="flex gap-1.5 items-center flex-wrap">
-                                  {row.date && <span className="font-bold font-mono text-slate-800 dark:text-slate-200">{row.date}</span>}
+                                  {row.date && <span className="font-bold font-sans text-slate-800 dark:text-slate-200">{row.date}</span>}
                                   {row.time && (
-                                    <span className={`font-mono text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${
+                                    <span className={`font-sans text-[9px] font-bold px-1.5 py-0.5 rounded border uppercase ${
                                       row.time === "CRITICAL" ? "bg-red-500/10 border-red-500/20 text-red-500" :
                                       row.time === "HIGH" ? "bg-orange-500/10 border-orange-500/20 text-orange-500" :
                                       row.time === "MEDIUM" ? "bg-amber-500/10 border-amber-500/20 text-amber-500" :
@@ -1065,7 +1116,7 @@ export default function FindingsClient({
                                       {row.time}
                                     </span>
                                   )}
-                                  {row.conductBy && <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">by {row.conductBy}</span>}
+                                  {row.conductBy && <span className="text-[10px] text-slate-400 dark:text-slate-500 font-sans">by {row.conductBy}</span>}
                                 </div>
                                 <div className="prose dark:prose-invert text-[11px] leading-relaxed" dangerouslySetInnerHTML={{ __html: row.activity }} />
                               </div>
@@ -1085,7 +1136,7 @@ export default function FindingsClient({
                                         <div className="w-1 h-3 bg-[#f0810f] rounded-full" />
                                         <span className="font-bold text-amber-700 dark:text-amber-400">Corrective Action</span>
                                         {row.correctiveActionDate && (
-                                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">({formatDateString(row.correctiveActionDate)})</span>
+                                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-sans">({formatDateString(row.correctiveActionDate)})</span>
                                         )}
                                       </div>
                                       {!isHtmlEmpty(row.correctiveActionRemarks) && (
@@ -1099,7 +1150,7 @@ export default function FindingsClient({
                                         <div className="w-1 h-3 bg-[#10b981] rounded-full" />
                                         <span className="font-bold text-emerald-700 dark:text-emerald-400">Final Verification</span>
                                         {row.correctiveFinalDate && (
-                                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono">({formatDateString(row.correctiveFinalDate)})</span>
+                                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-sans">({formatDateString(row.correctiveFinalDate)})</span>
                                         )}
                                       </div>
                                       {!isHtmlEmpty(row.correctiveFinalRemarks) && (
@@ -1112,7 +1163,6 @@ export default function FindingsClient({
                                 <div className="prose dark:prose-invert text-[11px] leading-relaxed text-slate-650" dangerouslySetInnerHTML={{ __html: !isHtmlEmpty(row.pIncharge) ? row.pIncharge || "" : "" }} />
                               )}
                             </td>
-                            
                             {canManage && (
                               <td className="px-4 py-3.5 text-right space-x-1 whitespace-nowrap no-print">
                                 <button
@@ -1139,9 +1189,7 @@ export default function FindingsClient({
                     </tbody>
                   </table>
                 </div>
-              </div>
-
-            </form>
+              </div>            </form>
           </div>
         </div>
       )}
@@ -1149,3 +1197,4 @@ export default function FindingsClient({
     </div>
   );
 }
+

@@ -1,5 +1,5 @@
 import prisma from "./db";
-import { User, Department, UserGroup, AuditProject, Finding, Attachment } from "./mockData";
+import { User, Department, UserGroup, UserRole, AuditProject, Finding, Attachment } from "./mockData";
 
 export const dbService = {
   // Departments
@@ -32,14 +32,26 @@ export const dbService = {
 
   // Groups
   async getUserGroups(): Promise<UserGroup[]> {
-    return prisma.userGroup.findMany({
+    const groups = await prisma.userGroup.findMany({
       orderBy: { name: "asc" }
     });
+    return groups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      description: group.description,
+      role: group.role as UserRole
+    }));
   },
-  async createUserGroup(name: string, description: string): Promise<UserGroup> {
-    return prisma.userGroup.create({
-      data: { name, description }
+  async createUserGroup(name: string, description: string, role: UserRole): Promise<UserGroup> {
+    const group = await prisma.userGroup.create({
+      data: { name, description, role }
     });
+    return {
+      id: group.id,
+      name: group.name,
+      description: group.description,
+      role: group.role as UserRole
+    };
   },
 
   // Users
@@ -63,8 +75,11 @@ export const dbService = {
     }));
   },
   async createUser(name: string, email: string, role: any, departmentId: string | null, groupId: string | null): Promise<User> {
+    const group = groupId
+      ? await prisma.userGroup.findUnique({ where: { id: groupId }, select: { role: true } })
+      : null;
     const u = await prisma.user.create({
-      data: { name, email, role, departmentId, groupId }
+      data: { name, email, role: group?.role || role, departmentId, groupId }
     });
     return {
       id: u.id,
@@ -76,9 +91,12 @@ export const dbService = {
     };
   },
   async updateUser(userId: string, name: string, email: string, role: any, departmentId: string | null, groupId: string | null): Promise<User | null> {
+    const group = groupId
+      ? await prisma.userGroup.findUnique({ where: { id: groupId }, select: { role: true } })
+      : null;
     const u = await prisma.user.update({
       where: { id: userId },
-      data: { name, email, role, departmentId, groupId }
+      data: { name, email, role: group?.role || role, departmentId, groupId }
     });
     return {
       id: u.id,
@@ -90,9 +108,16 @@ export const dbService = {
     };
   },
   async updateUserGroupAndDept(userId: string, departmentId: string | null, groupId: string | null): Promise<User | null> {
+    const group = groupId
+      ? await prisma.userGroup.findUnique({ where: { id: groupId }, select: { role: true } })
+      : null;
     const u = await prisma.user.update({
       where: { id: userId },
-      data: { departmentId, groupId }
+      data: {
+        departmentId,
+        groupId,
+        ...(group ? { role: group.role } : {})
+      }
     });
     return {
       id: u.id,
@@ -128,7 +153,11 @@ export const dbService = {
       include: {
         auditors: true,
         attachments: true,
-        findings: true,
+        findings: {
+          include: {
+            auditor: true
+          }
+        },
         executionSchedules: true
       },
       orderBy: { code: "asc" }
@@ -157,11 +186,21 @@ export const dbService = {
       opExTimeline: p.opExTimeline,
       approvals: p.approvals,
       auditorIds: p.auditors.map(a => a.id),
-      findings: p.findings.map(f => ({ id: f.id, title: f.title, status: f.status })),
+      findings: p.findings.map(f => ({
+        id: f.id,
+        title: f.title,
+        description: f.description,
+        status: f.status,
+        severity: f.severity,
+        recommendation: f.recommendation,
+        auditorName: f.auditor?.name,
+        createdAt: f.createdAt.toISOString()
+      })),
       executionSchedules: p.executionSchedules.map(e => ({
         id: e.id,
         visitNumber: e.visitNumber,
         language: e.language,
+        status: e.status,
         organization: e.organization,
         ownerName: e.ownerName,
         lastModifiedBy: e.lastModifiedBy
@@ -191,16 +230,16 @@ export const dbService = {
         auditorNames: "",
         workflowStage: "DRAFTING",
         deptPicIds: "",
-        objectives: "<p>Ensure operational controls conform to local regulatory parameters, and technical data pathways remain uncompromised.</p>",
-        riskProcess: "<p>Verify VPC subnet logs meet security policy constraints, checking active firewalls against the compliance catalog.</p>",
-        riskClass: "<p>Inherited vulnerabilities categorized by threat surface mapping per the 2026 enterprise risk guidelines.</p>",
-        opEx: "<p>Sample log outputs to trace system database transactions, using automated script checks to map discrepancies.</p>",
-        fieldwork: "<p>Anomalies in database query latency will immediately trigger manual secondary auditor integrity checklists.</p>",
-        outcome: "<p>Comprehensive summary output highlighting compliance metrics, critical findings logs, and recommended adjustments.</p>",
-        dataRequestType: "<p>Define the formats, sample counts, and audit logs required for secure transfer.</p>",
-        focusArea: "<p>Highlight the high-risk transaction zones, sensitive credentials storage, and cloud service endpoints.</p>",
-        opExTimeline: "{\"presentationDate\":\"\",\"notificationDate\":\"2026-07-09\",\"fieldWorkStart\":\"2026-07-20\",\"fieldWorkEnd\":\"2026-07-31\",\"findingReportOffset\":3,\"finalReportOffset\":7}",
-        approvals: "{\"preparedByName\":\"\",\"preparedByTitle\":\"Lead Auditor\",\"preparedDate\":\"\",\"approvedByName\":\"\",\"approvedByTitle\":\"Head of Department\",\"approvedDate\":\"\"}"
+        objectives: "",
+        riskProcess: "",
+        riskClass: "",
+        opEx: "",
+        fieldwork: "",
+        outcome: "",
+        dataRequestType: "",
+        focusArea: "",
+        opExTimeline: "{\"presentationDate\":\"\",\"notificationDate\":\"\",\"fieldWorkStart\":\"\",\"fieldWorkEnd\":\"\",\"findingReportOffset\":0,\"finalReportOffset\":0}",
+        approvals: "{\"preparedByName\":\"\",\"preparedByTitle\":\"\",\"preparedDate\":\"\",\"approvedByName\":\"\",\"approvedByTitle\":\"\",\"approvedDate\":\"\"}"
       },
       include: {
         auditors: true,
@@ -478,6 +517,7 @@ export const dbService = {
       additionalAttendees: s.additionalAttendees,
       standards: s.standards,
       language: s.language,
+      status: s.status,
       objectives: s.objectives,
       scope: s.scope,
       scheduleRows: s.scheduleRows,
@@ -499,6 +539,7 @@ export const dbService = {
     additionalAttendees: string;
     standards: string;
     language: string;
+    status?: string;
     objectives: string;
     scope: string;
     scheduleRows: string;
@@ -526,6 +567,7 @@ export const dbService = {
       additionalAttendees: s.additionalAttendees,
       standards: s.standards,
       language: s.language,
+      status: s.status,
       objectives: s.objectives,
       scope: s.scope,
       scheduleRows: s.scheduleRows,
@@ -536,9 +578,35 @@ export const dbService = {
     };
   },
   async getExecutionSchedule(id: string): Promise<any> {
-    return prisma.executionSchedule.findUnique({
-      where: { id }
+    const s = await prisma.executionSchedule.findUnique({
+      where: { id },
+      include: { project: true }
     });
+    if (!s) return null;
+    return {
+      id: s.id,
+      projectId: s.projectId,
+      projectName: s.project?.name,
+      projectCode: s.project?.code,
+      organization: s.organization,
+      address: s.address,
+      visitNumber: s.visitNumber,
+      actualVisitDate: s.actualVisitDate,
+      auditPeriod: s.auditPeriod,
+      leadExecution: s.leadExecution,
+      teamMembers: s.teamMembers,
+      additionalAttendees: s.additionalAttendees,
+      standards: s.standards,
+      language: s.language,
+      status: s.status,
+      objectives: s.objectives,
+      scope: s.scope,
+      scheduleRows: s.scheduleRows,
+      ownerName: s.ownerName,
+      lastModifiedBy: s.lastModifiedBy,
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString()
+    };
   },
   async updateExecutionSchedule(id: string, data: Partial<{
     organization: string;
@@ -551,6 +619,7 @@ export const dbService = {
     additionalAttendees: string;
     standards: string;
     language: string;
+    status?: string;
     objectives: string;
     scope: string;
     scheduleRows: string;
@@ -579,6 +648,7 @@ export const dbService = {
       additionalAttendees: s.additionalAttendees,
       standards: s.standards,
       language: s.language,
+      status: s.status,
       objectives: s.objectives,
       scope: s.scope,
       scheduleRows: s.scheduleRows,
@@ -615,5 +685,49 @@ export const dbService = {
       where: { id }
     });
     return true;
+  },
+  // SMTP Config
+  async getSmtpConfig(): Promise<any> {
+    let config = await prisma.smtpConfig.findFirst();
+    if (!config) {
+      config = await prisma.smtpConfig.create({
+        data: {
+          id: "default",
+          host: "smtp.mailtrap.io",
+          port: 2525,
+          username: "",
+          password: "",
+          secure: false,
+          fromEmail: "alerts@auditdesk.com"
+        }
+      });
+    }
+    return config;
+  },
+  async updateSmtpConfig(data: any): Promise<any> {
+    return prisma.smtpConfig.upsert({
+      where: { id: "default" },
+      update: data,
+      create: { id: "default", ...data }
+    });
+  },
+  // Email Templates
+  async getEmailTemplates(): Promise<any[]> {
+    return prisma.emailTemplate.findMany({
+      orderBy: { id: "asc" }
+    });
+  },
+  async getEmailTemplate(id: string): Promise<any> {
+    return prisma.emailTemplate.findUnique({
+      where: { id }
+    });
+  },
+  async updateEmailTemplate(id: string, subject: string, body: string): Promise<any> {
+    return prisma.emailTemplate.update({
+      where: { id },
+      data: { subject, body }
+    });
   }
 };
+
+

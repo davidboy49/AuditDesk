@@ -26,7 +26,8 @@ import {
   createExecutionScheduleAction, 
   updateExecutionScheduleAction, 
   deleteExecutionScheduleAction,
-  getExecutionSchedulesAction
+  getExecutionSchedulesAction,
+  sendEmailNotificationAction
 } from "@/app/actions";
 import { RBAC } from "@/lib/auth";
 import ActionToolbar from "@/components/ui/action-toolbar";
@@ -186,7 +187,27 @@ export default function ScheduleClient({
     subLabel: `${u.role.replace("_", " ")}${u.email ? ` • ${u.email}` : ""}`
   }));
 
-  const canManage = currentUser.role !== "AUDITEE"; // Auditor/Lead/Admin can manage schedules
+  const isProjectMember = (proj: any) => {
+    if (!proj) return false;
+    if (currentUser.role === "ADMIN") return true;
+    if (proj.leadAuditorId === currentUser.id) return true;
+    const auditorsList = proj.auditorNames ? proj.auditorNames.split(",").map((s: string) => s.trim()) : [];
+    if (auditorsList.includes(currentUser.name)) return true;
+    if (proj.auditorIds?.includes(currentUser.id)) return true;
+    const picList = proj.deptPicIds ? proj.deptPicIds.split(",") : [];
+    if (picList.includes(currentUser.id) || picList.includes(currentUser.name)) return true;
+    return false;
+  };
+
+  const isScheduleOrMeetingAllowed = (sched: any) => {
+    if (!sched) return false;
+    if (currentUser.role === "ADMIN") return true;
+    if (sched.ownerName === currentUser.name || sched.lastModifiedBy === currentUser.name) return true;
+    const proj = projects.find(p => p.id === sched.projectId);
+    return isProjectMember(proj);
+  };
+
+  const canManage = true;
 
   const showFeedback = (msg: string) => {
     setFeedback(msg);
@@ -349,6 +370,17 @@ export default function ScheduleClient({
           setIsModalOpen(false);
           const fresh = await getExecutionSchedulesAction();
           setSchedules(fresh.filter((s: any) => s.language !== "finding" && s.language !== "meeting"));
+
+          const emailResult = await sendEmailNotificationAction("schedule", payload.projectId, {
+            auditPeriod: payload.auditPeriod,
+            leadExecution: payload.leadExecution,
+            standards: payload.standards
+          });
+          if (emailResult.success) {
+            for (const alert of emailResult.simulatedAlerts) {
+              window.dispatchEvent(new CustomEvent("send-simulated-email", { detail: alert }));
+            }
+          }
         }
       } else {
         if (!selectedScheduleId) return;
@@ -358,6 +390,17 @@ export default function ScheduleClient({
           setIsModalOpen(false);
           const fresh = await getExecutionSchedulesAction();
           setSchedules(fresh.filter((s: any) => s.language !== "finding" && s.language !== "meeting"));
+
+          const emailResult = await sendEmailNotificationAction("schedule", payload.projectId, {
+            auditPeriod: payload.auditPeriod,
+            leadExecution: payload.leadExecution,
+            standards: payload.standards
+          });
+          if (emailResult.success) {
+            for (const alert of emailResult.simulatedAlerts) {
+              window.dispatchEvent(new CustomEvent("send-simulated-email", { detail: alert }));
+            }
+          }
         }
       }
     } catch (err: any) {
@@ -502,7 +545,7 @@ export default function ScheduleClient({
 
       {/* Feedback notifier */}
       {feedback && (
-        <div className="fixed bottom-8 right-8 z-50 flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-mono font-semibold animate-slide-up border border-[#05375c] no-print">
+        <div className="fixed bottom-8 right-8 z-50 flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c] no-print">
           <span>{feedback}</span>
         </div>
       )}
@@ -513,9 +556,9 @@ export default function ScheduleClient({
           
           {/* ActionToolbar */}
           <ActionToolbar
-            onCreate={canManage ? openCreateModal : undefined}
-            onEdit={canManage && selectedScheduleId && activeSchedule ? () => openEditModal(activeSchedule) : undefined}
-            onDelete={canManage && selectedScheduleId ? handleDeleteSchedule : undefined}
+            onCreate={openCreateModal}
+            onEdit={selectedScheduleId && activeSchedule && isScheduleOrMeetingAllowed(activeSchedule) ? () => openEditModal(activeSchedule) : undefined}
+            onDelete={selectedScheduleId && activeSchedule && isScheduleOrMeetingAllowed(activeSchedule) ? handleDeleteSchedule : undefined}
             onRefresh={() => {
               setSearchQuery("");
               setProjectFilter("ALL");
@@ -559,7 +602,7 @@ export default function ScheduleClient({
                         s.id === selectedScheduleId ? "bg-slate-100/80 dark:bg-slate-800/50 font-medium" : ""
                       }`}
                     >
-                      <td className="px-6 py-4.5 font-mono text-slate-700 dark:text-slate-300">
+                      <td className="px-6 py-4.5 font-sans text-slate-700 dark:text-slate-300">
                         {s.projectCode}
                       </td>
                       <td 
@@ -598,7 +641,7 @@ export default function ScheduleClient({
             {/* Modal Header */}
             <div className="px-8 py-5 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="text-[10px] font-mono text-slate-400 font-bold uppercase">
+                <div className="text-[10px] font-sans text-slate-400 font-bold uppercase">
                   Document 2. Schedule
                 </div>
                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
@@ -649,14 +692,14 @@ export default function ScheduleClient({
                     className="w-full bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 rounded-md px-3 py-2 text-xs focus:outline-none cursor-pointer text-slate-800 dark:text-slate-200"
                   >
                     <option value="">Choose Audit Plan...</option>
-                    {projects.map(p => (
+                    {projects.filter(isProjectMember).map(p => (
                       <option key={p.id} value={p.id}>
                         {p.code} - {p.name} ({p.status})
                       </option>
                     ))}
                   </select>
                 ) : (
-                  <div className="text-xs font-mono font-bold text-slate-800 dark:text-slate-200">
+                  <div className="text-xs font-sans font-bold text-slate-800 dark:text-slate-200">
                     Linked Plan: {projects.find(p => p.id === selectedProjectId)?.code} - {projects.find(p => p.id === selectedProjectId)?.name}
                   </div>
                 )}
@@ -907,7 +950,7 @@ export default function ScheduleClient({
                             <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-bold text-slate-800 dark:text-slate-200 whitespace-nowrap">
                               {formatDateString(row.date)}
                             </td>
-                            <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-mono text-[10px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
+                            <td className="p-3 border-r border-slate-200 dark:border-slate-800 font-sans text-[10px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
                               {row.time || "Time not selected"}
                             </td>
                             <td 
@@ -981,7 +1024,7 @@ export default function ScheduleClient({
                         {/* Slot Modal Header (Fixed at top) */}
                         <div className="px-6 py-4.5 bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-855 flex justify-between items-center shrink-0">
                           <div>
-                            <span className="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[9px] font-mono font-bold text-slate-555 dark:text-slate-400">
+                            <span className="bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-[9px] font-sans font-bold text-slate-555 dark:text-slate-400">
                               SLOT #{activeRowIndex + 1}
                             </span>
                             <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mt-1">
@@ -1018,7 +1061,7 @@ export default function ScheduleClient({
                               <div className="p-4 bg-white dark:bg-slate-950/40 grid grid-cols-3 gap-4 animate-fade-in border-t border-slate-100 dark:border-slate-800">
                                 {/* Day Input */}
                                 <div className="space-y-1">
-                                  <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">
+                                  <label className="text-[10px] font-sans text-slate-400 uppercase font-semibold">
                                     Day
                                   </label>
                                   <input 
@@ -1032,7 +1075,7 @@ export default function ScheduleClient({
 
                                 {/* Date Selector */}
                                 <div className="space-y-1">
-                                  <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">
+                                  <label className="text-[10px] font-sans text-slate-400 uppercase font-semibold">
                                     Execution Date
                                   </label>
                                   <input 
@@ -1045,10 +1088,10 @@ export default function ScheduleClient({
 
                                 {/* Time Selector */}
                                 <div className="space-y-1">
-                                  <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">Time Range</label>
+                                  <label className="text-[10px] font-sans text-slate-400 uppercase font-semibold">Time Range</label>
                                   <div className="grid grid-cols-2 gap-2">
                                     <div className="flex items-center gap-1.5">
-                                      <span className="text-[9px] text-slate-400 font-mono uppercase">From</span>
+                                      <span className="text-[9px] text-slate-400 font-sans uppercase">From</span>
                                       <input 
                                         type="time" 
                                         value={timeVals.from} 
@@ -1060,7 +1103,7 @@ export default function ScheduleClient({
                                       />
                                     </div>
                                     <div className="flex items-center gap-1.5">
-                                      <span className="text-[9px] text-slate-400 font-mono uppercase">To</span>
+                                      <span className="text-[9px] text-slate-400 font-sans uppercase">To</span>
                                       <input 
                                         type="time" 
                                         value={timeVals.to} 
@@ -1076,7 +1119,7 @@ export default function ScheduleClient({
 
                                 {/* Conduct By Dropdown */}
                                 <div className="space-y-1">
-                                  <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">Conducted By (Auditors)</label>
+                                  <label className="text-[10px] font-sans text-slate-400 uppercase font-semibold">Conducted By (Auditors)</label>
                                   <MultiSelect
                                     selectedValues={conductByArray}
                                     onChange={(values) => updateDraftField("conductBy", values.join(", "))}
@@ -1087,7 +1130,7 @@ export default function ScheduleClient({
 
                                 {/* PIC Dropdown */}
                                 <div className="space-y-1">
-                                  <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">Person in Charge (PIC)</label>
+                                  <label className="text-[10px] font-sans text-slate-400 uppercase font-semibold">Person in Charge (PIC)</label>
                                   <MultiSelect
                                     selectedValues={pInchargeArray}
                                     onChange={(values) => updateDraftField("pIncharge", values.join(", "))}
@@ -1101,7 +1144,7 @@ export default function ScheduleClient({
 
                           {/* Activities & Document Requests Rich Text Editor */}
                           <div className="space-y-1 flex-1 flex flex-col">
-                            <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold mb-1 ">
+                            <label className="text-[10px] font-sans text-slate-400 uppercase font-semibold mb-1 ">
                               Activities & Document Requests
                             </label>
                             <RichEditor 
@@ -1155,7 +1198,7 @@ export default function ScheduleClient({
                         <tr key={index} className="align-top border-b border-slate-300 dark:border-slate-800">
                           <td className="p-3 border-r border-slate-300 dark:border-slate-800 font-medium whitespace-pre-wrap">{row.day || ""}</td>
                           <td className="p-3 border-r border-slate-300 dark:border-slate-800 font-bold whitespace-pre-wrap">{formatDateString(row.date)}</td>
-                          <td className="p-3 border-r border-slate-300 dark:border-slate-800 font-mono text-[10px] whitespace-pre-wrap">{row.time || "Time not selected"}</td>
+                          <td className="p-3 border-r border-slate-300 dark:border-slate-800 font-sans text-[10px] whitespace-pre-wrap">{row.time || "Time not selected"}</td>
                           <td 
                             className="p-3 border-r border-slate-300 dark:border-slate-800 leading-relaxed rich-text-content"
                             dangerouslySetInnerHTML={{ __html: row.activity }}
@@ -1170,7 +1213,7 @@ export default function ScheduleClient({
               </div>
 
               {/* PDF Print Footer Note (conditional on print) */}
-              <div className="border-t border-slate-200 dark:border-slate-800 pt-4 text-[10px] font-mono text-slate-400 leading-relaxed italic">
+              <div className="border-t border-slate-200 dark:border-slate-800 pt-4 text-[10px] font-sans text-slate-400 leading-relaxed italic">
                 Note: The operational excellence execution schedule is subject to refinement based on real-time field risk discoveries.
               </div>
             </form>

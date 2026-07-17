@@ -8,16 +8,16 @@ datasource db {
 }
 
 model User {
-  id           String      @id @default(uuid())
-  email        String      @unique
+  id           String         @id @default(uuid())
+  email        String         @unique
   name         String
-  role         String      // "ADMIN", "LEAD_AUDITOR", "AUDITOR", "AUDITEE"
+  role         String // "ADMIN", "LEAD_AUDITOR", "AUDITOR", "AUDITEE"
   departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  department   Department?    @relation(fields: [departmentId], references: [id], onDelete: SetNull)
   groupId      String?
-  group        UserGroup?  @relation(fields: [groupId], references: [id], onDelete: SetNull)
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
+  group        UserGroup?     @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
   documents    Document[]
   findings     Finding[]
   reports      Report[]
@@ -37,44 +37,45 @@ model UserGroup {
   id          String   @id @default(uuid())
   name        String   @unique
   description String?
+  role        String   @default("AUDITEE") // RBAC role inherited by group members
   users       User[]
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
 
 model AuditProject {
-  id              String       @id @default(uuid())
+  id              String   @id @default(uuid())
   name            String
-  code            String       @unique
-  status          String       // "PLANNING", "IN_PROGRESS", "REPORTING", "ARCHIVED"
-  workflowStage   String       @default("DRAFTING") // "DRAFTING", "REVIEW", "PENDING_PIC", "APPROVED"
-  deptPicIds      String       @default("") // Comma-separated list of User IDs representing department PICs
+  code            String   @unique
+  status          String // "PLANNING", "IN_PROGRESS", "REPORTING", "ARCHIVED"
+  workflowStage   String   @default("DRAFTING") // "DRAFTING", "REVIEW", "PENDING_PIC", "APPROVED"
+  deptPicIds      String   @default("") // Comma-separated list of User IDs representing department PICs
   scope           String
   planningDetails String
   startDate       DateTime
   endDate         DateTime
   leadAuditorId   String?
-  auditorNames    String       @default("")
-  
-  // Custom Scoping details fields
-  objectives      String       @default("")
-  riskProcess     String       @default("")
-  riskClass       String       @default("")
-  opEx            String       @default("")
-  fieldwork       String       @default("")
-  outcome         String       @default("")
-  dataRequestType String       @default("")
-  focusArea       String       @default("")
-  opExTimeline    String       @default("")
-  approvals       String       @default("")
+  auditorNames    String   @default("")
 
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
-  documents       Document[]
-  findings        Finding[]
-  reports         Report[]
-  attachments     Attachment[]
-  auditors        User[]       @relation("ProjectAuditors")
+  // Custom Scoping details fields
+  objectives      String @default("")
+  riskProcess     String @default("")
+  riskClass       String @default("")
+  opEx            String @default("")
+  fieldwork       String @default("")
+  outcome         String @default("")
+  dataRequestType String @default("")
+  focusArea       String @default("")
+  opExTimeline    String @default("")
+  approvals       String @default("")
+
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  documents          Document[]
+  findings           Finding[]
+  reports            Report[]
+  attachments        Attachment[]
+  auditors           User[]              @relation("ProjectAuditors")
   executionSchedules ExecutionSchedule[]
 }
 
@@ -83,7 +84,7 @@ model Attachment {
   fileName  String
   fileSize  Int
   fileType  String
-  fileData  String       // Base64-encoded file data
+  fileData  String // Base64-encoded file data
   projectId String
   project   AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   createdAt DateTime     @default(now())
@@ -105,11 +106,11 @@ model Finding {
   id             String       @id @default(uuid())
   title          String
   description    String
-  status         String       // "OPEN", "UNDER_REVIEW", "CLOSED"
-  severity       String       // "LOW", "MEDIUM", "HIGH", "CRITICAL"
+  status         String // "OPEN", "UNDER_REVIEW", "CLOSED"
+  severity       String // "LOW", "MEDIUM", "HIGH", "CRITICAL"
   recommendation String
   projectId      String
-  project   AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project        AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   auditorId      String
   auditor        User         @relation(fields: [auditorId], references: [id])
   createdAt      DateTime     @default(now())
@@ -120,7 +121,7 @@ model Report {
   id        String       @id @default(uuid())
   title     String
   summary   String
-  status    String       // "DRAFT", "FINAL"
+  status    String // "DRAFT", "FINAL"
   projectId String
   project   AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
   creatorId String
@@ -130,26 +131,27 @@ model Report {
 }
 
 model ExecutionSchedule {
-  id              String       @id @default(uuid())
-  projectId       String
-  project         AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  organization    String
-  address         String
-  visitNumber     String       @default("01")
-  actualVisitDate String
-  auditPeriod     String
-  leadExecution   String
-  teamMembers     String       @default("") // Comma-separated list of names
-  additionalAttendees String   @default("")
-  standards       String       @default("Work Procedure, work instruction, and policy")
-  language        String       @default("English")
-  objectives      String       @default("")
-  scope           String       @default("")
-  scheduleRows    String       // JSON serialized rows: [{date, time, activity, conductBy, pIncharge}]
-  ownerName       String       @default("Sarah Jenkins")
-  lastModifiedBy  String       @default("Sarah Jenkins")
-  createdAt       DateTime     @default(now())
-  updatedAt       DateTime     @updatedAt
+  id                  String       @id @default(uuid())
+  projectId           String
+  project             AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  organization        String
+  address             String
+  visitNumber         String       @default("01")
+  actualVisitDate     String
+  auditPeriod         String
+  leadExecution       String
+  teamMembers         String       @default("") // Comma-separated list of names
+  additionalAttendees String       @default("")
+  standards           String       @default("Work Procedure, work instruction, and policy")
+  language            String       @default("English")
+  status              String       @default("DRAFT")
+  objectives          String       @default("")
+  scope               String       @default("")
+  scheduleRows        String // JSON serialized rows: [{date, time, activity, conductBy, pIncharge}]
+  ownerName           String       @default("Sarah Jenkins")
+  lastModifiedBy      String       @default("Sarah Jenkins")
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
 }
 
 model ActivityLog {
@@ -160,4 +162,22 @@ model ActivityLog {
   action    String
   details   String
   createdAt DateTime @default(now())
+}
+
+model SmtpConfig {
+  id        String   @id @default("default")
+  host      String   @default("smtp.mailtrap.io")
+  port      Int      @default(2525)
+  username  String   @default("")
+  password  String   @default("")
+  secure    Boolean  @default(false)
+  fromEmail String   @default("alerts@auditdesk.com")
+  updatedAt DateTime @updatedAt
+}
+
+model EmailTemplate {
+  id        String   @id
+  subject   String
+  body      String
+  updatedAt DateTime @updatedAt
 }

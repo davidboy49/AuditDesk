@@ -1,18 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { 
-  Users, 
-  Building2, 
-  Plus, 
-  Lock,
-  Mail,
-  X,
-  UserPlus,
-  Pencil,
-  Trash2
-} from "lucide-react";
-import { User, Department, UserGroup } from "@/lib/mockData";
+
+import { Users, Plus, Lock, Mail, X, ShieldCheck, KeyRound } from "lucide-react";
+import { User, Department, UserGroup, UserRole } from "@/lib/mockData";
 import { 
   createUserGroupAction, 
   updateUserGroupAndDeptAction, 
@@ -23,6 +14,8 @@ import {
 } from "@/app/actions";
 import { RBAC } from "@/lib/auth";
 import ActionToolbar from "@/components/ui/action-toolbar";
+
+const getErrorMessage = (error: unknown) => error instanceof Error ? error.message : String(error);
 
 interface UsersClientProps {
   initialUsers: User[];
@@ -38,7 +31,7 @@ export default function UsersClient({
   currentUser 
 }: UsersClientProps) {
   const [users, setUsers] = useState<User[]>(initialUsers);
-  const [departments, setDepartments] = useState<Department[]>(initialDepartments);
+  const [departments] = useState<Department[]>(initialDepartments);
   const [userGroups, setUserGroups] = useState<UserGroup[]>(initialUserGroups);
   
   // Search/Filter states
@@ -48,6 +41,7 @@ export default function UsersClient({
   // Form states
   const [newGroupName, setNewGroupName] = useState("");
   const [newGroupDesc, setNewGroupDesc] = useState("");
+  const [newGroupRole, setNewGroupRole] = useState<UserRole>("AUDITEE");
   
   // User Edit/Create state variables
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
@@ -55,7 +49,7 @@ export default function UsersClient({
   const [userModalMode, setUserModalMode] = useState<"create" | "edit">("create");
   const [userName, setUserName] = useState("");
   const [userEmail, setUserEmail] = useState("");
-  const [userRole, setUserRole] = useState<any>("AUDITEE");
+  const [userRole, setUserRole] = useState<UserRole>("AUDITEE");
   const [userDept, setUserDept] = useState("");
   const [userGroup, setUserGroup] = useState("");
 
@@ -78,7 +72,8 @@ export default function UsersClient({
     if (updated) {
       const freshUsers = await getUsersAction();
       setUsers(freshUsers);
-      showFeedback(`Updated group for ${user.name}`);
+      const group = userGroups.find((item) => item.id === groupId);
+      showFeedback(group ? `${user.name} now inherits ${formatRole(group.role)} access.` : `Removed ${user.name} from their group.`);
     }
   };
   
@@ -143,9 +138,9 @@ export default function UsersClient({
           showFeedback(`User ${userName} updated successfully.`);
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      showFeedback(`Error: ${err.message || err.toString()}`);
+      showFeedback(`Error: ${getErrorMessage(err)}`);
     }
   };
 
@@ -165,22 +160,27 @@ export default function UsersClient({
         setSelectedUserId(null);
         showFeedback(`User "${u.name}" has been deleted.`);
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error(err);
-      showFeedback(`Delete Error: ${err.message || err.toString()}`);
+      showFeedback(`Delete Error: ${getErrorMessage(err)}`);
     }
   };
 
 
   const handleCreateGroup = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newGroupName) return;
-    
-    const newGroup = await createUserGroupAction(newGroupName, newGroupDesc);
-    setUserGroups([...userGroups, newGroup]);
-    setNewGroupName("");
-    setNewGroupDesc("");
-    showFeedback(`User Group "${newGroup.name}" construction saved`);
+    if (!newGroupName.trim()) return;
+
+    try {
+      const newGroup = await createUserGroupAction(newGroupName, newGroupDesc, newGroupRole);
+      setUserGroups((groups) => [...groups, newGroup].sort((a, b) => a.name.localeCompare(b.name)));
+      setNewGroupName("");
+      setNewGroupDesc("");
+      setNewGroupRole("AUDITEE");
+      showFeedback(`User group "${newGroup.name}" created with ${formatRole(newGroup.role)} access.`);
+    } catch (err: unknown) {
+      showFeedback(`Error: ${getErrorMessage(err)}`);
+    }
   };
 
   const showFeedback = (msg: string) => {
@@ -196,6 +196,8 @@ export default function UsersClient({
     return matchesSearch && matchesRole;
   });
 
+  const formatRole = (role: UserRole) => role.replace("_", " ");
+
   const roleFilterOptions = [
     { label: "Admin", value: "ADMIN" },
     { label: "Lead Auditor", value: "LEAD_AUDITOR" },
@@ -210,17 +212,31 @@ export default function UsersClient({
       <div className="space-y-1">
         <h1 className="text-xl font-bold tracking-tight text-slate-800 dark:text-slate-100">User Scoping & Identity Management</h1>
         <p className="text-xs text-muted-foreground">
-          Group employees into departments and governance segments to delegate auditing scopes.
+          Create governance groups, assign an RBAC role, and apply access instantly when users join.
         </p>
       </div>
 
       {/* Feedback notifier */}
       {feedback && (
-        <div className="fixed bottom-8 right-8 z-50 flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-mono font-semibold animate-slide-up border border-[#05375c]">
+        <div className="fixed bottom-8 right-8 z-50 flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c]">
           <span>{feedback}</span>
         </div>
       )}
 
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center justify-between text-slate-500"><span className="text-[10px] font-sans font-bold uppercase">Users</span><Users className="h-4 w-4" /></div>
+          <p className="mt-2 text-2xl font-bold text-slate-800 dark:text-slate-100">{users.length}</p>
+        </div>
+        <div className="rounded-lg border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="flex items-center justify-between text-slate-500"><span className="text-[10px] font-sans font-bold uppercase">Access groups</span><ShieldCheck className="h-4 w-4" /></div>
+          <p className="mt-2 text-2xl font-bold text-slate-800 dark:text-slate-100">{userGroups.length}</p>
+        </div>
+        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-4 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/30">
+          <div className="flex items-center justify-between text-emerald-700 dark:text-emerald-400"><span className="text-[10px] font-sans font-bold uppercase">RBAC status</span><KeyRound className="h-4 w-4" /></div>
+          <p className="mt-2 text-sm font-bold text-emerald-800 dark:text-emerald-300">Instant inheritance enabled</p>
+        </div>
+      </div>
       {/* User Ledger Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
@@ -282,7 +298,7 @@ export default function UsersClient({
                           </div>
                         </td>
                         <td className={`px-6 py-4.5 font-bold ${roleColor}`}>
-                          {u.role.replace("_", " ")}
+                          {formatRole(u.role)}
                         </td>
                         <td className="px-6 py-4.5">
                           <span className="font-semibold text-slate-700 dark:text-slate-300">
@@ -300,7 +316,7 @@ export default function UsersClient({
                               <option value="">No Group</option>
                               {userGroups.map((g) => (
                                 <option key={g.id} value={g.id}>
-                                  {g.name}
+                                  {g.name} - {formatRole(g.role)}
                                 </option>
                               ))}
                             </select>
@@ -327,14 +343,18 @@ export default function UsersClient({
             <div className="space-y-6">
               {/* List */}
               <div className="space-y-3">
-                <h3 className="text-[10px] font-mono uppercase text-slate-400 font-bold">Group Registers</h3>
+                <h3 className="text-[10px] font-sans uppercase text-slate-400 font-bold">Group Registers</h3>
                 <div className="space-y-2">
                   {userGroups.map((group) => (
                     <div key={group.id} className="p-3 bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-850 rounded-md space-y-1">
                       <div className="flex items-center gap-1.5 font-bold text-xs text-slate-800 dark:text-slate-200">
                         <Users className="w-3.5 h-3.5 text-[#05375c] dark:text-accent" /> {group.name}
                       </div>
-                      <p className="text-[10px] text-slate-500">{group.description || "No description provided."}</p>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[10px] text-slate-500">{group.description || "No description provided."}</p>
+                        <span className="shrink-0 rounded-full bg-[#05375c]/10 px-2 py-1 text-[9px] font-bold text-[#05375c] dark:bg-sky-400/10 dark:text-sky-300">{formatRole(group.role)}</span>
+                      </div>
+                      <p className="text-[9px] font-sans text-slate-400">{users.filter((user) => user.groupId === group.id).length} member(s) | role applies on assignment</p>
                     </div>
                   ))}
                 </div>
@@ -343,10 +363,10 @@ export default function UsersClient({
               {/* Create Form */}
               {canManage ? (
                 <form onSubmit={handleCreateGroup} className="space-y-3 border-t border-slate-100 dark:border-slate-800 pt-4 animate-fade-in">
-                  <h3 className="text-[10px] font-mono uppercase text-slate-400 font-bold">Add New User Group</h3>
+                  <h3 className="text-[10px] font-sans uppercase text-slate-400 font-bold">Add New User Group</h3>
                   
                   <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-slate-400 uppercase font-semibold">Group Name</label>
+                    <label className="text-[9px] font-sans text-slate-400 uppercase font-semibold">Group Name</label>
                     <input
                       type="text"
                       required
@@ -358,7 +378,21 @@ export default function UsersClient({
                   </div>
 
                   <div className="space-y-1">
-                    <label className="text-[9px] font-mono text-slate-400 uppercase font-semibold">Description</label>
+                    <label className="text-[9px] font-sans text-slate-400 uppercase font-semibold">Instant RBAC Role</label>
+                    <select
+                      value={newGroupRole}
+                      onChange={(e) => setNewGroupRole(e.target.value as UserRole)}
+                      className="w-full rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-1 focus:ring-accent dark:border-slate-800 dark:bg-slate-800 dark:text-slate-200"
+                    >
+                      <option value="AUDITEE">Auditee</option>
+                      <option value="AUDITOR">Auditor</option>
+                      <option value="LEAD_AUDITOR">Lead Auditor</option>
+                      <option value="ADMIN">Administrator</option>
+                    </select>
+                    <p className="text-[9px] leading-relaxed text-slate-400">Every user assigned to this group immediately inherits this system role.</p>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-sans text-slate-400 uppercase font-semibold">Description</label>
                     <textarea
                       value={newGroupDesc}
                       onChange={(e) => setNewGroupDesc(e.target.value)}
@@ -375,7 +409,7 @@ export default function UsersClient({
                   </button>
                 </form>
               ) : (
-                <div className="flex gap-2 p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800/40 rounded text-[10px] text-slate-400 font-mono">
+                <div className="flex gap-2 p-3 bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800/40 rounded text-[10px] text-slate-400 font-sans">
                   <Lock className="w-4 h-4 shrink-0 text-slate-400" />
                   <span>Lacks governance permission to create user groups.</span>
                 </div>
@@ -393,7 +427,7 @@ export default function UsersClient({
           <div className="bg-white dark:bg-slate-900 w-full max-w-md rounded-lg shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-850">
             
             <div className="px-6 py-4 bg-slate-50 dark:bg-slate-850 border-b border-slate-200 dark:border-slate-800 flex justify-between items-center">
-              <h3 className="font-bold text-xs font-mono uppercase tracking-wider text-slate-800 dark:text-slate-100">
+              <h3 className="font-bold text-xs font-sans uppercase tracking-wider text-slate-800 dark:text-slate-100">
                 {userModalMode === "create" ? "Create New User Identity" : "Edit User Identity"}
               </h3>
               <button 
@@ -407,7 +441,7 @@ export default function UsersClient({
 
             <form onSubmit={handleSaveUser} className="p-6 space-y-4">
               <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">Full Name</label>
+                <label className="text-[10px] font-sans text-slate-400 uppercase font-semibold">Full Name</label>
                 <input
                   type="text"
                   required
@@ -419,7 +453,7 @@ export default function UsersClient({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">Email Address</label>
+                <label className="text-[10px] font-sans text-slate-400 uppercase font-semibold">Email Address</label>
                 <input
                   type="email"
                   required
@@ -431,10 +465,11 @@ export default function UsersClient({
               </div>
 
               <div className="space-y-1">
-                <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">System Role</label>
+                <label className="text-[10px] font-sans text-slate-400 uppercase font-semibold">System Role</label>
                 <select
                   value={userRole}
-                  onChange={(e) => setUserRole(e.target.value)}
+                  onChange={(e) => setUserRole(e.target.value as UserRole)}
+                  disabled={Boolean(userGroup)}
                   className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-250 dark:border-slate-800 rounded-md px-3 py-2 text-xs focus:outline-none cursor-pointer text-slate-800 dark:text-slate-200"
                 >
                   <option value="AUDITEE">Auditee</option>
@@ -442,11 +477,12 @@ export default function UsersClient({
                   <option value="LEAD_AUDITOR">Lead Auditor</option>
                   <option value="ADMIN">Administrator</option>
                 </select>
+                {userGroup && <p className="text-[9px] text-emerald-600 dark:text-emerald-400">Role is inherited from the selected group.</p>}
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">Department</label>
+                  <label className="text-[10px] font-sans text-slate-400 uppercase font-semibold">Department</label>
                   <select
                     value={userDept}
                     onChange={(e) => setUserDept(e.target.value)}
@@ -462,16 +498,21 @@ export default function UsersClient({
                 </div>
 
                 <div className="space-y-1">
-                  <label className="text-[10px] font-mono text-slate-400 uppercase font-semibold">User Group</label>
+                  <label className="text-[10px] font-sans text-slate-400 uppercase font-semibold">User Group</label>
                   <select
                     value={userGroup}
-                    onChange={(e) => setUserGroup(e.target.value)}
+                    onChange={(e) => {
+                      const groupId = e.target.value;
+                      setUserGroup(groupId);
+                      const group = userGroups.find((item) => item.id === groupId);
+                      if (group) setUserRole(group.role);
+                    }}
                     className="w-full bg-slate-50 dark:bg-slate-800 border border-slate-250 dark:border-slate-800 rounded-md px-3 py-2 text-xs focus:outline-none cursor-pointer text-slate-800 dark:text-slate-200"
                   >
                     <option value="">No Group</option>
                     {userGroups.map((g) => (
                       <option key={g.id} value={g.id}>
-                        {g.name}
+                        {g.name} - {formatRole(g.role)}
                       </option>
                     ))}
                   </select>
