@@ -18,7 +18,8 @@ import {
   BookOpen,
   Lock,
   Unlock,
-  BadgeCheck
+  BadgeCheck,
+  CheckCircle2
 } from "lucide-react";
 import { 
   User, 
@@ -31,7 +32,6 @@ import {
   updateExecutionScheduleAction, 
   deleteExecutionScheduleAction,
   getExecutionSchedulesAction,
-  sendEmailNotificationAction,
   sendMeetingReleaseNotificationAction
 } from "@/app/actions";
 import ActionToolbar from "@/components/ui/action-toolbar";
@@ -98,6 +98,28 @@ const formatTimeRange = (from: string, to: string) => {
   return `${to12h(from)} - ${to12h(to)}`;
 };
 
+type AttendeeConfirmation = {
+  confirmedAt: string;
+  confirmedBy: string;
+};
+
+const parseAttendeeConfirmations = (raw?: string): Record<string, AttendeeConfirmation> => {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const pruneConfirmations = (attendeeNames: string[], confirmations: Record<string, AttendeeConfirmation>) => {
+  return attendeeNames.reduce<Record<string, AttendeeConfirmation>>((next, name) => {
+    if (confirmations[name]) next[name] = confirmations[name];
+    return next;
+  }, {});
+};
+
 interface MeetingsClientProps {
   initialSchedules: ExecutionSchedule[];
   projects: AuditProject[];
@@ -137,6 +159,7 @@ export default function MeetingsClient({
   const [scope, setScope] = useState("");
   const [rows, setRows] = useState<ScheduleRow[]>([]);
   const [meetingStatus, setMeetingStatus] = useState<"DRAFT" | "RELEASED">("DRAFT");
+  const [attendeeConfirmations, setAttendeeConfirmations] = useState<Record<string, AttendeeConfirmation>>({});
   // Active row index for card editing
   const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
   // Draft state for unsaved edits in configuring slot
@@ -183,6 +206,10 @@ export default function MeetingsClient({
   const additionalAttendeesArray = additionalAttendees
     ? additionalAttendees.split(",").map(name => name.trim()).filter(Boolean)
     : [];
+
+  const confirmedAttendeeCount = additionalAttendeesArray.filter(name => attendeeConfirmations[name]).length;
+  const normalizeAttendeeName = (name: string) => name.trim().toLowerCase();
+  const canConfirmAttendee = (attendeeName: string) => currentUser.role === "ADMIN" || normalizeAttendeeName(attendeeName) === normalizeAttendeeName(currentUser.name);
 
   // Options derived from users in system
   const userOptions = users.map(u => ({
@@ -240,6 +267,7 @@ export default function MeetingsClient({
     setScope("");
     setRows([]);
     setMeetingStatus("DRAFT");
+    setAttendeeConfirmations({});
     setIsModalOpen(true);
   };
 
@@ -256,6 +284,7 @@ export default function MeetingsClient({
     setAdditionalAttendees(sched.additionalAttendees);
     setStandards(sched.standards);
     setMeetingStatus((sched.status as any) || "DRAFT");
+    setAttendeeConfirmations(parseAttendeeConfirmations(sched.attendeeConfirmations));
     setObjectives(sched.objectives);
     setScope(sched.scope);
     
@@ -283,18 +312,15 @@ export default function MeetingsClient({
     }
   }, [schedules]);
 
-  const handleSaveSchedule = async (e?: React.FormEvent, nextStatus?: "DRAFT" | "RELEASED") => {
-    if (e) e.preventDefault();
-
-    const targetStatus = nextStatus || meetingStatus;
+  const persistMeetingSchedule = async (targetStatus: "DRAFT" | "RELEASED", options: { closeAfterSave?: boolean; sendReleaseNotification?: boolean } = {}) => {
     if (meetingStatus === "RELEASED" && targetStatus !== "DRAFT") {
       showFeedback("This meeting record is already released. Reopen it before making edits.");
-      return;
+      return false;
     }
 
     if (!selectedProjectId || !organization || !actualVisitDate) {
       alert("Please fill in the required fields.");
-      return;
+      return false;
     }
 
     const payload = {
@@ -307,6 +333,7 @@ export default function MeetingsClient({
       leadExecution,
       teamMembers,
       additionalAttendees,
+      attendeeConfirmations: JSON.stringify(pruneConfirmations(additionalAttendeesArray, attendeeConfirmations)),
       standards,
       language: "meeting",
       status: targetStatus,
@@ -319,70 +346,100 @@ export default function MeetingsClient({
 
     try {
       let savedId = selectedScheduleId;
+      const shouldClose = options.closeAfterSave ?? false;
+      const notifyRelease = options.sendReleaseNotification ?? false;
 
       if (modalMode === "create") {
         const result = await createExecutionScheduleAction(payload);
-        if (result) {
-          savedId = result.id || savedId;
-          setSelectedScheduleId(savedId || null);
-          setMeetingStatus(targetStatus);
-          const fresh = await getExecutionSchedulesAction();
-          setSchedules(fresh.filter((s: any) => s.language === "meeting"));
-
-          if (targetStatus === "RELEASED" && savedId) {
-            await sendMeetingReleaseNotificationAction(savedId);
-          } else {
-            const emailResult = await sendEmailNotificationAction("meetings", payload.projectId, {
-              organization: payload.organization,
-              visitDate: payload.actualVisitDate,
-              ownerName: payload.ownerName
-            });
-            if (emailResult.success) {
-              for (const alert of emailResult.simulatedAlerts) {
-                window.dispatchEvent(new CustomEvent("send-simulated-email", { detail: alert }));
-              }
-            }
-          }
-
-          showFeedback(targetStatus === "RELEASED" ? "Open meeting report released and locked." : "Open meeting record generated successfully.");
-          setIsModalOpen(false);
-        }
+        if (!result) return false;
+        savedId = result.id || savedId;
+        setSelectedScheduleId(savedId || null);
+        setMeetingStatus(targetStatus);
       } else {
-        if (!selectedScheduleId) return;
+        if (!selectedScheduleId) return false;
         const result = await updateExecutionScheduleAction(selectedScheduleId, payload);
-        if (result) {
-          savedId = result.id || savedId;
-          setMeetingStatus(targetStatus);
-          const fresh = await getExecutionSchedulesAction();
-          setSchedules(fresh.filter((s: any) => s.language === "meeting"));
-
-          if (targetStatus === "RELEASED" && savedId) {
-            await sendMeetingReleaseNotificationAction(savedId);
-          } else {
-            const emailResult = await sendEmailNotificationAction("meetings", payload.projectId, {
-              organization: payload.organization,
-              visitDate: payload.actualVisitDate,
-              ownerName: payload.ownerName
-            });
-            if (emailResult.success) {
-              for (const alert of emailResult.simulatedAlerts) {
-                window.dispatchEvent(new CustomEvent("send-simulated-email", { detail: alert }));
-              }
-            }
-          }
-
-          showFeedback(targetStatus === "RELEASED" ? "Open meeting report released and locked." : "Open meeting changes updated.");
-          setIsModalOpen(false);
-        }
+        if (!result) return false;
+        savedId = result.id || savedId;
+        setMeetingStatus(targetStatus);
       }
+
+      const fresh = await getExecutionSchedulesAction();
+      setSchedules(fresh.filter((s: any) => s.language === "meeting"));
+
+      if (targetStatus === "RELEASED" && savedId && notifyRelease) {
+        await sendMeetingReleaseNotificationAction(savedId);
+      }
+
+      showFeedback(targetStatus === "RELEASED"
+        ? "Open meeting report released and locked."
+        : (modalMode === "create" ? "Open meeting record generated successfully." : "Open meeting changes saved."));
+
+      if (shouldClose) {
+        setIsModalOpen(false);
+      }
+
+      return true;
     } catch (err: any) {
       console.error(err);
       alert(`Save failed: ${err.message || err.toString()}`);
+      return false;
     }
   };
 
+  const handleSaveSchedule = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    await persistMeetingSchedule("DRAFT", { closeAfterSave: false, sendReleaseNotification: false });
+  };
+
   const handleReleaseSchedule = async () => {
-    await handleSaveSchedule(undefined, "RELEASED");
+    await persistMeetingSchedule("RELEASED", { closeAfterSave: false, sendReleaseNotification: true });
+  };
+
+  const handleConfirmAttendee = async (attendeeName: string) => {
+    if (!selectedScheduleId) {
+      showFeedback("Save and release the meeting before confirming attendance.");
+      return;
+    }
+
+    if (meetingStatus !== "RELEASED") {
+      showFeedback("Attendance can only be confirmed after the meeting is released.");
+      return;
+    }
+
+    if (!canConfirmAttendee(attendeeName)) {
+      showFeedback("Only the attendee or an Admin can confirm this attendance.");
+      return;
+    }
+
+    if (attendeeConfirmations[attendeeName]) {
+      showFeedback(`${attendeeName} is already confirmed.`);
+      return;
+    }
+
+    const nextConfirmations = pruneConfirmations(additionalAttendeesArray, {
+      ...attendeeConfirmations,
+      [attendeeName]: {
+        confirmedAt: new Date().toISOString(),
+        confirmedBy: currentUser.name
+      }
+    });
+
+    try {
+      const result = await updateExecutionScheduleAction(selectedScheduleId, {
+        attendeeConfirmations: JSON.stringify(nextConfirmations),
+        lastModifiedBy: currentUser.name
+      });
+
+      if (result) {
+        setAttendeeConfirmations(nextConfirmations);
+        const fresh = await getExecutionSchedulesAction();
+        setSchedules(fresh.filter((s: any) => s.language === "meeting"));
+        showFeedback(`${attendeeName} confirmed attendance.`);
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(`Confirmation failed: ${err.message || err.toString()}`);
+    }
   };
 
   const handleReopenSchedule = async () => {
@@ -541,7 +598,7 @@ export default function MeetingsClient({
 
       {/* Feedback notifier */}
       {feedback && (
-        <div className="fixed bottom-8 right-8 z-50 flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c] no-print">
+        <div className="fixed bottom-8 right-8 z-[1100] flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-2xl text-xs font-sans font-semibold animate-slide-up border border-[#05375c] no-print">
           <span>{feedback}</span>
         </div>
       )}
@@ -725,7 +782,7 @@ export default function MeetingsClient({
             </div>
 
             {/* Modal Scrollable Body */}
-            <form onSubmit={handleSaveSchedule} className={`p-8 space-y-8 overflow-y-auto max-h-[86vh] ${isLocked ? "pointer-events-none select-none opacity-70" : ""}`}>
+            <form onSubmit={handleSaveSchedule} className={`p-8 space-y-8 overflow-y-auto max-h-[86vh] ${isLocked ? "opacity-70" : ""}`}>
               
               {/* Linked Audit Plan and QR Code Card */}
               <div className="border border-slate-200 dark:border-slate-800 rounded-lg bg-white dark:bg-slate-900 p-5 flex flex-col md:flex-row items-center justify-between gap-6 shadow-sm">
@@ -865,11 +922,56 @@ export default function MeetingsClient({
                         <td colSpan={3} className="px-4 py-2.5">
                           <MultiSelect
                             selectedValues={additionalAttendeesArray}
-                            onChange={(values) => setAdditionalAttendees(values.join(", "))}
+                            onChange={(values) => {
+                              setAdditionalAttendees(values.join(", "));
+                              setAttendeeConfirmations(prev => pruneConfirmations(values, prev));
+                            }}
                             options={userOptions}
                             placeholder="Select attendees..."
                             disabled={isLocked}
                           />
+                          {additionalAttendeesArray.length > 0 && (
+                            <div className="mt-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 p-3 space-y-3">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <span className="text-[11px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Attendance Confirmation</span>
+                                <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">{confirmedAttendeeCount}/{additionalAttendeesArray.length} confirmed</span>
+                              </div>
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                {additionalAttendeesArray.map((attendeeName) => {
+                                  const confirmation = attendeeConfirmations[attendeeName];
+                                  const canConfirm = canConfirmAttendee(attendeeName);
+                                  const confirmedAt = confirmation?.confirmedAt
+                                    ? new Date(confirmation.confirmedAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                                    : "";
+
+                                  return (
+                                    <div key={attendeeName} className="flex items-center justify-between gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2">
+                                      <div className="min-w-0">
+                                        <div className="truncate text-xs font-bold text-slate-800 dark:text-slate-100">{attendeeName}</div>
+                                        <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                                          {confirmation ? `Confirmed by ${confirmation.confirmedBy} on ${confirmedAt}` : "Pending confirmation"}
+                                        </div>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleConfirmAttendee(attendeeName)}
+                                        disabled={Boolean(confirmation) || !canConfirm || !selectedScheduleId || !isLocked}
+                                        className={`shrink-0 inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[11px] font-bold transition-colors ${confirmation
+                                          ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                          : canConfirm && selectedScheduleId && isLocked
+                                            ? "bg-[#05375c] text-white hover:bg-[#074776] cursor-pointer"
+                                            : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 cursor-not-allowed"
+                                        }`}
+                                      >
+                                        {confirmation && <CheckCircle2 className="w-3.5 h-3.5" />}
+                                        {confirmation ? "Confirmed" : !selectedScheduleId ? "Save First" : !isLocked ? "Release First" : canConfirm ? "Confirm" : "Waiting"}
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </td>
                       </tr>
                       {/* Row 10: OPE Objectives */}

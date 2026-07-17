@@ -117,6 +117,7 @@ export interface ExecutionSchedule {
   leadExecution: string;
   teamMembers: string;
   additionalAttendees: string;
+  attendeeConfirmations?: string;
   standards: string;
   language: string;
   status: "DRAFT" | "RELEASED";

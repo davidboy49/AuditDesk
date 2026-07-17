@@ -21,6 +21,7 @@ import {
   ArrowUpRight,
   Import,
   Download,
+  Copy,
   Trash2,
   Plus,
   CheckCircle,
@@ -52,6 +53,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
   const [projects, setProjects] = useState<AuditProject[]>(initialProjects);
   const [selectedProjectId, setSelectedProjectId] = useState<string>(initialProjects[0]?.id || "");
   const [isCreating, setIsCreating] = useState<boolean>(false);
+  const [isCopying, setIsCopying] = useState<boolean>(false);
   const [showTimeline, setShowTimeline] = useState(true);
   
   // Popup modal state
@@ -139,6 +141,33 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
   const [newStart, setNewStart] = useState("");
   const [newEnd, setNewEnd] = useState("");
   const [newLead, setNewLead] = useState("");
+
+  const closeNewProjectModal = () => {
+    setIsCreating(false);
+    setIsCopying(false);
+  };
+
+  const makeUniqueCopyCode = (baseCode: string) => {
+    const normalized = baseCode.trim().toUpperCase();
+    const base = normalized.endsWith("-COPY") || normalized.includes("-COPY-") ? normalized : `${normalized}-COPY`;
+    let candidate = base;
+    let suffix = 2;
+    while (projects.some((p) => p.code.trim().toUpperCase() === candidate.trim().toUpperCase())) {
+      candidate = `${base}-${suffix++}`;
+    }
+    return candidate;
+  };
+
+  const openCopyProjectModal = (proj: AuditProject) => {
+    setIsCopying(true);
+    setIsCreating(true);
+    setSelectedProjectId(proj.id);
+    setNewName(`${proj.name} (Copy)`);
+    setNewCode(makeUniqueCopyCode(proj.code));
+    setNewStart(proj.startDate);
+    setNewEnd(proj.endDate);
+    setNewLead(proj.leadAuditorId || "");
+  };
 
   const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
 
@@ -370,7 +399,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
       });
 
       if (updated) {
-        setProjects(projects.map(p => p.id === selectedProject.id ? updated : p));
+        setProjects(projects.map(p => (p.id === selectedProject.id ? updated : p)));
         setIsPopupOpen(false);
       } else {
         setSaveFeedback("Submission failed: Project not found.");
@@ -425,7 +454,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
       });
 
       if (updated) {
-        setProjects(projects.map(p => p.id === selectedProject.id ? updated : p));
+        setProjects(projects.map(p => (p.id === selectedProject.id ? updated : p)));
         setSaveFeedback("Scoping plan updates saved successfully.");
         setTimeout(() => setSaveFeedback(null), 4000);
       } else {
@@ -446,7 +475,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     });
 
     if (updated) {
-      setProjects(projects.map(p => p.id === selectedProject.id ? updated : p));
+      setProjects(projects.map(p => (p.id === selectedProject.id ? updated : p)));
     }
   };
 
@@ -494,7 +523,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
       });
 
       if (updated) {
-        setProjects(projects.map(p => p.id === selectedProject.id ? updated : p));
+        setProjects(projects.map(p => (p.id === selectedProject.id ? updated : p)));
         setSaveFeedback(`Status successfully updated to ${newStatus === "PLANNING" ? "Planning" : newStatus === "SUBMITTED_FOR_APPROVAL" ? "Submitted for Approval" : "Released"}.`);
         setTimeout(() => setSaveFeedback(null), 3000);
       } else {
@@ -564,9 +593,15 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     e.preventDefault();
     if (!newName || !newCode || !newStart || !newEnd) return;
 
+    const normalizedCode = newCode.trim().toUpperCase();
+    if (projects.some((p) => p.code.trim().toUpperCase() === normalizedCode)) {
+      alert("That Project Code already exists. Please use a unique code for the copied Audit Plan.");
+      return;
+    }
+
     const newProj = await createProjectAction(
       newName,
-      newCode,
+      normalizedCode,
       "PLANNING",
       "",
       "",
@@ -576,7 +611,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     );
 
     setProjects([...projects, newProj]);
-    setIsCreating(false);
+    closeNewProjectModal();
     openProjectEditor(newProj);
     
     // Clear form
@@ -635,7 +670,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
         setEditAttachments(freshAttachments);
         
         // Update project state locally
-        setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, attachments: freshAttachments } : p));
+        setProjects(projects.map(p => (p.id === selectedProject.id ? { ...p, attachments: freshAttachments } : p)));
       }
     };
     reader.readAsDataURL(file);
@@ -653,7 +688,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
       setEditAttachments(freshAttachments);
       
       // Update project state locally
-      setProjects(projects.map(p => p.id === selectedProject.id ? { ...p, attachments: freshAttachments } : p));
+      setProjects(projects.map(p => (p.id === selectedProject.id ? { ...p, attachments: freshAttachments } : p)));
     }
   };
 
@@ -724,7 +759,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
       {isCreating && (
         <div 
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm transition-opacity duration-300 animate-in fade-in"
-          onClick={() => setIsCreating(false)}
+          onClick={closeNewProjectModal}
         >
           <div 
             className="bg-white dark:bg-slate-950 w-full max-w-2xl rounded-lg shadow-2xl flex flex-col overflow-hidden h-fit border border-slate-200 dark:border-slate-850 scoping-modal-container transform scale-100 animate-in zoom-in-95 duration-200"
@@ -737,14 +772,14 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   Document 1. Audit Plan
                 </div>
                 <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">
-                  Create New Audit Plan
+                  {isCopying ? "Copy Audit Plan" : "Create New Audit Plan"}
                 </h2>
               </div>
               
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
-                  onClick={() => setIsCreating(false)}
+                  onClick={closeNewProjectModal}
                   className="p-2 border border-slate-200 dark:border-slate-800 hover:bg-slate-100 dark:hover:bg-slate-900 text-slate-500 rounded cursor-pointer transition-colors"
                 >
                   <X className="w-4 h-4" />
@@ -846,7 +881,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
               <div className="flex gap-3 justify-end pt-4 border-t border-slate-200 dark:border-slate-800">
                 <button
                   type="button"
-                  onClick={() => setIsCreating(false)}
+                  onClick={closeNewProjectModal}
                   className="px-4 py-2 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 text-xs font-bold rounded cursor-pointer text-slate-700 dark:text-slate-300 transition-colors"
                 >
                   Cancel
@@ -855,7 +890,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   type="submit"
                   className="px-4 py-2 bg-[#05375c] text-white hover:bg-[#074776] text-xs font-bold rounded cursor-pointer transition-colors flex items-center gap-1.5"
                 >
-                  <Save className="w-3.5 h-3.5" /> Create Audit Plan
+                  <Save className="w-3.5 h-3.5" /> {isCopying ? "Create Copy" : "Create Audit Plan"}
                 </button>
               </div>
             </form>
@@ -868,7 +903,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
         
         {/* ActionToolbar */}
         <ActionToolbar
-          onCreate={canModify ? () => setIsCreating(true) : undefined}
+          onCreate={canModify ? () => { setIsCopying(false); setIsCreating(true); } : undefined}
           onRefresh={() => {
             setSearchQuery("");
             setStatusFilter("ALL");
@@ -945,17 +980,30 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                     </td>
                     {(currentUser.role === "ADMIN" || isProjectMember(proj)) && (
                       <td className="px-6 py-4 text-center no-print">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeleteProject(proj.id);
-                          }}
-                          className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
-                          title="Delete Audit Plan"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        <div className="flex items-center justify-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openCopyProjectModal(proj);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-[#0066cc] hover:bg-[#0066cc]/10 rounded transition-colors cursor-pointer"
+                            title="Copy Audit Plan"
+                          >
+                            <Copy className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteProject(proj.id);
+                            }}
+                            className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-500/10 rounded transition-colors cursor-pointer"
+                            title="Delete Audit Plan"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
                       </td>
                     )}
                   </tr>
@@ -1024,6 +1072,17 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   className="flex items-center gap-1.5 px-3 py-2 border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-800 hover:bg-slate-50 text-slate-700 dark:text-slate-200 text-xs font-bold rounded transition-colors cursor-pointer"
                 >
                   <FileDown className="w-3.5 h-3.5" /> Export PDF
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (selectedProject) {
+                      openCopyProjectModal(selectedProject);
+                    }
+                  }}
+                  className="flex items-center gap-1.5 px-4 py-2 border border-[#0066cc] text-[#0066cc] hover:bg-[#0066cc]/10 text-xs font-bold rounded transition-colors cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" /> Copy Plan
                 </button>
 
                 {editStatus === "PLANNING" && (
@@ -1127,7 +1186,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                           .map(u => ({
                             value: u.name,
                             label: u.name,
-                            subLabel: `${u.role.replace("_", " ")}${u.email ? ` • ${u.email}` : ""}`
+                            subLabel: `${u.role.replace("_", " ")}${u.email ? ` - ${u.email}` : ""}`
                           }))}
                         placeholder="Select Lead Auditors..."
                       />
@@ -1144,7 +1203,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                           .map(u => ({
                             value: u.name,
                             label: u.name,
-                            subLabel: `${u.role.replace("_", " ")}${u.email ? ` • ${u.email}` : ""}`
+                            subLabel: `${u.role.replace("_", " ")}${u.email ? ` - ${u.email}` : ""}`
                           }))}
                         placeholder="Select Auditors..."
                       />
@@ -1162,7 +1221,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         options={users.map(u => ({
                           value: u.name,
                           label: u.name,
-                          subLabel: `${u.role.replace("_", " ")}${u.email ? ` • ${u.email}` : ""}`
+                          subLabel: `${u.role.replace("_", " ")}${u.email ? ` - ${u.email}` : ""}`
                         }))}
                         placeholder="Select PICs..."
                       />

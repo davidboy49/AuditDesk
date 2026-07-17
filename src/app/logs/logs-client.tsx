@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Search, History, User, Trash2, Plus, X, Save, Info } from "lucide-react";
+import { Search, History, User, Trash2, Plus, X, Save, Info, ChevronLeft, ChevronRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { createCustomActivityLogAction, deleteActivityLogAction } from "@/app/actions";
 
@@ -25,6 +25,8 @@ export default function LogsClient({ initialLogs, currentUser }: LogsClientProps
   const [logs, setLogs] = useState<ActivityLog[]>(initialLogs);
   const [searchQuery, setSearchQuery] = useState("");
   const [actionFilter, setActionFilter] = useState("ALL");
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
   
   // Add modal states
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -61,6 +63,19 @@ export default function LogsClient({ initialLogs, currentUser }: LogsClientProps
   });
 
   const uniqueActions = Array.from(new Set(logs.map(l => l.action)));
+  const totalPages = Math.max(1, Math.ceil(filteredLogs.length / pageSize));
+  const startIndex = (currentPage - 1) * pageSize;
+  const paginatedLogs = filteredLogs.slice(startIndex, startIndex + pageSize);
+  const visibleStart = filteredLogs.length === 0 ? 0 : startIndex + 1;
+  const visibleEnd = Math.min(startIndex + pageSize, filteredLogs.length);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, actionFilter]);
+
+  useEffect(() => {
+    setCurrentPage(page => Math.min(page, totalPages));
+  }, [totalPages]);
 
   const formatDate = (dateStr: string) => {
     try {
@@ -193,7 +208,7 @@ export default function LogsClient({ initialLogs, currentUser }: LogsClientProps
                   </td>
                 </tr>
               ) : (
-                filteredLogs.map((log) => (
+                paginatedLogs.map((log) => (
                   <tr key={log.id} className="hover:bg-slate-50/50 dark:hover:bg-slate-800/20 transition-colors align-top">
                     {/* Timestamp */}
                     <td className="px-6 py-4 font-sans text-[10px] text-slate-600 dark:text-slate-400 whitespace-nowrap">
@@ -242,6 +257,32 @@ export default function LogsClient({ initialLogs, currentUser }: LogsClientProps
           </table>
         </div>
       </div>
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-slate-200 dark:border-slate-800 px-4 py-3 bg-slate-50/70 dark:bg-slate-900/60">
+          <div className="text-[11px] text-slate-500 dark:text-slate-400 font-sans">
+            Showing <span className="font-bold text-slate-700 dark:text-slate-200">{visibleStart}</span> to <span className="font-bold text-slate-700 dark:text-slate-200">{visibleEnd}</span> of <span className="font-bold text-slate-700 dark:text-slate-200">{filteredLogs.length}</span> logs
+          </div>
+          <div className="flex items-center justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => setCurrentPage(page => Math.max(1, page - 1))}
+              disabled={currentPage === 1}
+              className="inline-flex items-center gap-1.5 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-[11px] font-bold text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-45 hover:bg-slate-100 dark:hover:bg-slate-850 transition-colors"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" /> Previous
+            </button>
+            <span className="min-w-20 text-center text-[11px] font-bold text-slate-600 dark:text-slate-300">
+              Page {currentPage} / {totalPages}
+            </span>
+            <button
+              type="button"
+              onClick={() => setCurrentPage(page => Math.min(totalPages, page + 1))}
+              disabled={currentPage === totalPages}
+              className="inline-flex items-center gap-1.5 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 px-3 py-2 text-[11px] font-bold text-slate-700 dark:text-slate-200 disabled:cursor-not-allowed disabled:opacity-45 hover:bg-slate-100 dark:hover:bg-slate-850 transition-colors"
+            >
+              Next <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
 
       {/* Add Log Modal */}
       {isAddModalOpen && (

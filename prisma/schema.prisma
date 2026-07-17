@@ -142,6 +142,7 @@ model ExecutionSchedule {
   leadExecution       String
   teamMembers         String       @default("") // Comma-separated list of names
   additionalAttendees String       @default("")
+  attendeeConfirmations String     @default("{}")
   standards           String       @default("Work Procedure, work instruction, and policy")
   language            String       @default("English")
   status              String       @default("DRAFT")

@@ -204,6 +204,7 @@ export async function createExecutionScheduleAction(data: {
   leadExecution: string;
   teamMembers: string;
   additionalAttendees: string;
+  attendeeConfirmations?: string;
   standards: string;
   language: string;
   status?: string;
@@ -229,6 +230,7 @@ export async function updateExecutionScheduleAction(id: string, data: Partial<{
   leadExecution: string;
   teamMembers: string;
   additionalAttendees: string;
+  attendeeConfirmations?: string;
   standards: string;
   language: string;
   status?: string;

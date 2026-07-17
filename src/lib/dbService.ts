@@ -1,5 +1,27 @@
 import prisma from "./db";
 import { User, Department, UserGroup, UserRole, AuditProject, Finding, Attachment } from "./mockData";
+const getScheduleAttendeeConfirmations = async (ids: string[]) => {
+  if (ids.length === 0) return {} as Record<string, string>;
+  const placeholders = ids.map(() => "?").join(",");
+  const rows = await prisma.$queryRawUnsafe<Array<{ id: string; attendeeConfirmations: string | null }>>(
+    `SELECT id, attendeeConfirmations FROM ExecutionSchedule WHERE id IN (${placeholders})`,
+    ...ids
+  );
+  return rows.reduce<Record<string, string>>((map, row) => {
+    map[row.id] = row.attendeeConfirmations || "{}";
+    return map;
+  }, {});
+};
+
+const updateScheduleAttendeeConfirmations = async (id: string, attendeeConfirmations?: string) => {
+  if (attendeeConfirmations === undefined) return;
+  await prisma.$executeRawUnsafe(
+    "UPDATE ExecutionSchedule SET attendeeConfirmations = ? WHERE id = ?",
+    attendeeConfirmations,
+    id
+  );
+};
+
 
 export const dbService = {
   // Departments
@@ -217,10 +239,18 @@ export const dbService = {
     }));
   },
   async createProject(name: string, code: string, status: any, scope: string, planningDetails: string, startDate: string, endDate: string, leadAuditorId: string | null): Promise<AuditProject> {
+    const normalizedCode = code.trim().toUpperCase();
+    const existing = await prisma.auditProject.findFirst({
+      where: { code: normalizedCode }
+    });
+    if (existing) {
+      throw new Error(`An Audit Plan with code ${normalizedCode} already exists.`);
+    }
+
     const p = await prisma.auditProject.create({
       data: {
         name,
-        code,
+        code: normalizedCode,
         status,
         scope,
         planningDetails,
@@ -502,6 +532,7 @@ export const dbService = {
       },
       orderBy: { createdAt: "desc" }
     });
+    const confirmationMap = await getScheduleAttendeeConfirmations(schedules.map(s => s.id));
     return schedules.map(s => ({
       id: s.id,
       projectId: s.projectId,
@@ -515,6 +546,7 @@ export const dbService = {
       leadExecution: s.leadExecution,
       teamMembers: s.teamMembers,
       additionalAttendees: s.additionalAttendees,
+      attendeeConfirmations: confirmationMap[s.id] ?? s.attendeeConfirmations ?? "{}",
       standards: s.standards,
       language: s.language,
       status: s.status,
@@ -537,6 +569,7 @@ export const dbService = {
     leadExecution: string;
     teamMembers: string;
     additionalAttendees: string;
+    attendeeConfirmations?: string;
     standards: string;
     language: string;
     status?: string;
@@ -546,12 +579,14 @@ export const dbService = {
     ownerName?: string;
     lastModifiedBy?: string;
   }): Promise<any> {
+    const { attendeeConfirmations, ...createData } = data;
     const s = await prisma.executionSchedule.create({
-      data,
+      data: createData,
       include: {
         project: true
       }
     });
+    await updateScheduleAttendeeConfirmations(s.id, attendeeConfirmations);
     return {
       id: s.id,
       projectId: s.projectId,
@@ -565,6 +600,7 @@ export const dbService = {
       leadExecution: s.leadExecution,
       teamMembers: s.teamMembers,
       additionalAttendees: s.additionalAttendees,
+      attendeeConfirmations: attendeeConfirmations ?? s.attendeeConfirmations ?? "{}",
       standards: s.standards,
       language: s.language,
       status: s.status,
@@ -583,6 +619,7 @@ export const dbService = {
       include: { project: true }
     });
     if (!s) return null;
+    const confirmationMap = await getScheduleAttendeeConfirmations([id]);
     return {
       id: s.id,
       projectId: s.projectId,
@@ -596,6 +633,7 @@ export const dbService = {
       leadExecution: s.leadExecution,
       teamMembers: s.teamMembers,
       additionalAttendees: s.additionalAttendees,
+      attendeeConfirmations: confirmationMap[s.id] ?? s.attendeeConfirmations ?? "{}",
       standards: s.standards,
       language: s.language,
       status: s.status,
@@ -617,6 +655,7 @@ export const dbService = {
     leadExecution: string;
     teamMembers: string;
     additionalAttendees: string;
+    attendeeConfirmations?: string;
     standards: string;
     language: string;
     status?: string;
@@ -626,13 +665,15 @@ export const dbService = {
     ownerName: string;
     lastModifiedBy: string;
   }>): Promise<any | null> {
+    const { attendeeConfirmations, ...updateData } = data;
     const s = await prisma.executionSchedule.update({
       where: { id },
-      data,
+      data: updateData,
       include: {
         project: true
       }
     });
+    await updateScheduleAttendeeConfirmations(s.id, attendeeConfirmations);
     return {
       id: s.id,
       projectId: s.projectId,
@@ -646,6 +687,7 @@ export const dbService = {
       leadExecution: s.leadExecution,
       teamMembers: s.teamMembers,
       additionalAttendees: s.additionalAttendees,
+      attendeeConfirmations: attendeeConfirmations ?? s.attendeeConfirmations ?? "{}",
       standards: s.standards,
       language: s.language,
       status: s.status,
