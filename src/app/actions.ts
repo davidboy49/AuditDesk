@@ -196,7 +196,7 @@ export async function getExecutionSchedulesAction(): Promise<any[]> {
 
 export async function createExecutionScheduleAction(data: {
   projectId: string;
-  organization: string;
+  departments: string;
   address: string;
   visitNumber: string;
   actualVisitDate: string;
@@ -211,6 +211,7 @@ export async function createExecutionScheduleAction(data: {
   objectives: string;
   scope: string;
   scheduleRows: string;
+  attachments?: string;
   ownerName?: string;
   lastModifiedBy?: string;
 }): Promise<any> {
@@ -222,7 +223,7 @@ export async function createExecutionScheduleAction(data: {
 }
 
 export async function updateExecutionScheduleAction(id: string, data: Partial<{
-  organization: string;
+  departments: string;
   address: string;
   visitNumber: string;
   actualVisitDate: string;
@@ -237,6 +238,7 @@ export async function updateExecutionScheduleAction(id: string, data: Partial<{
   objectives: string;
   scope: string;
   scheduleRows: string;
+  attachments?: string;
   ownerName?: string;
   lastModifiedBy?: string;
 }>): Promise<any | null> {
@@ -354,7 +356,7 @@ export async function seedSmtpAndTemplatesAction(): Promise<any> {
     });
 
     await dbService.updateEmailTemplate("planning", "Audit Planning Scoping Update - {{projectCode}}", "<p>Hello {{recipientName}},</p><p>An update has occurred on the scoping document for <strong>{{projectName}}</strong> ({{projectCode}}).</p><p>Current Status: <strong>{{status}}</strong></p><p>Details: {{details}}</p><p>Best regards,<br/>Audit Management System</p>");
-    await dbService.updateEmailTemplate("meetings", "Open Meeting Schedule Invitation - {{projectName}}", "<p>Hello {{recipientName}},</p><p>A new open alignment meeting has been scheduled for <strong>{{projectName}}</strong> ({{projectCode}}).</p><p>Organization: {{organization}}</p><p>Visit Date: {{visitDate}}</p><p>Owner: {{ownerName}}</p><p>Please review and join the meeting ledger.</p>");
+    await dbService.updateEmailTemplate("meetings", "Open Meeting Schedule Invitation - {{projectName}}", "<p>Hello {{recipientName}},</p><p>A new open alignment meeting has been scheduled for <strong>{{projectName}}</strong> ({{projectCode}}).</p><p>Department(s): {{departments}}</p><p>Visit Date: {{visitDate}}</p><p>Owner: {{ownerName}}</p><p>Please review and join the meeting ledger.</p>");
     await dbService.updateEmailTemplate("schedule", "Execution Schedule Released - {{projectCode}}", "<p>Hello {{recipientName}},</p><p>An execution schedule and document request list has been updated for <strong>{{projectName}}</strong> ({{projectCode}}).</p><p>Audit Period: {{auditPeriod}}</p><p>Lead Execution: {{leadExecution}}</p><p>Standards: {{standards}}</p><p>Please upload the requested files as soon as possible.</p>");
     await dbService.updateEmailTemplate("findings", "New Audit Finding Registered - {{projectCode}}", "<p>Hello {{recipientName}},</p><p>A new compliance nonconformity has been logged under <strong>{{projectName}}</strong> ({{projectCode}}).</p><p>Finding: <strong>{{findingTitle}}</strong></p><p>Severity: <strong>{{severity}}</strong></p><p>Recommendation: {{recommendation}}</p>");
   }

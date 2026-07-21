@@ -41,6 +41,7 @@ export interface AuditProject {
   status: "PLANNING" | "SUBMITTED_FOR_APPROVAL" | "RELEASED";
   workflowStage: "DRAFTING" | "REVIEW" | "PENDING_PIC" | "APPROVED";
   deptPicIds: string; // Comma-separated list of User IDs representing department PICs
+  departments: string; // Comma-separated list of Department names
   scope: string;
   planningDetails: string;
   startDate: string;
@@ -58,6 +59,7 @@ export interface AuditProject {
   focusArea: string;
   opExTimeline: string;
   approvals: string;
+  deptPicConfirmations?: string;
 
   auditorIds?: string[]; // Array of selected auditor user IDs
   auditorNames?: string;
@@ -72,7 +74,7 @@ export interface AuditProject {
     auditorName?: string;
     createdAt?: string;
   }[];
-  executionSchedules?: { id: string; visitNumber: string; language: string; status?: string; organization: string; ownerName?: string; lastModifiedBy?: string }[];
+  executionSchedules?: { id: string; visitNumber: string; language: string; status?: string; departments: string; ownerName?: string; lastModifiedBy?: string; attendeeConfirmations?: string; scheduleRows?: string }[];
 }
 
 export interface Finding {
@@ -102,6 +104,8 @@ export interface ScheduleRow {
   correctiveActionRemarks?: string;
   correctiveFinalDate?: string;
   correctiveFinalRemarks?: string;
+  correctiveFinalUser?: string;
+  correctiveFinalDatetime?: string;
 }
 
 export interface ExecutionSchedule {
@@ -109,7 +113,7 @@ export interface ExecutionSchedule {
   projectId: string;
   projectName?: string;
   projectCode?: string;
-  organization: string;
+  departments: string;
   address: string;
   visitNumber: string;
   actualVisitDate: string;
@@ -124,6 +128,7 @@ export interface ExecutionSchedule {
   objectives: string;
   scope: string;
   scheduleRows: string; // JSON
+  attachments?: string; // JSON
   ownerName?: string;
   lastModifiedBy?: string;
   createdAt?: string;

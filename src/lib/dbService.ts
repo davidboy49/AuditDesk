@@ -191,6 +191,7 @@ export const dbService = {
       status: p.status as any,
       workflowStage: p.workflowStage as any,
       deptPicIds: p.deptPicIds,
+      departments: p.departments,
       scope: p.scope,
       planningDetails: p.planningDetails,
       startDate: p.startDate.toISOString().split("T")[0],
@@ -223,9 +224,11 @@ export const dbService = {
         visitNumber: e.visitNumber,
         language: e.language,
         status: e.status,
-        organization: e.organization,
+        departments: e.departments,
         ownerName: e.ownerName,
-        lastModifiedBy: e.lastModifiedBy
+        lastModifiedBy: e.lastModifiedBy,
+        scheduleRows: e.scheduleRows,
+        attendeeConfirmations: e.attendeeConfirmations
       })),
       attachments: p.attachments.map(a => ({
         id: a.id,
@@ -260,6 +263,7 @@ export const dbService = {
         auditorNames: "",
         workflowStage: "DRAFTING",
         deptPicIds: "",
+        departments: "",
         objectives: "",
         riskProcess: "",
         riskClass: "",
@@ -273,7 +277,13 @@ export const dbService = {
       },
       include: {
         auditors: true,
-        attachments: true
+        attachments: true,
+        findings: {
+          include: {
+            auditor: true
+          }
+        },
+        executionSchedules: true
       }
     });
     return {
@@ -283,6 +293,7 @@ export const dbService = {
       status: p.status as any,
       workflowStage: p.workflowStage as any,
       deptPicIds: p.deptPicIds,
+      departments: p.departments,
       scope: p.scope,
       planningDetails: p.planningDetails,
       startDate: p.startDate.toISOString().split("T")[0],
@@ -300,6 +311,27 @@ export const dbService = {
       opExTimeline: p.opExTimeline,
       approvals: p.approvals,
       auditorIds: p.auditors.map(a => a.id),
+      findings: p.findings ? p.findings.map(f => ({
+        id: f.id,
+        title: f.title,
+        description: f.description,
+        status: f.status,
+        severity: f.severity,
+        recommendation: f.recommendation,
+        auditorName: f.auditor?.name,
+        createdAt: f.createdAt.toISOString()
+      })) : [],
+      executionSchedules: p.executionSchedules ? p.executionSchedules.map(e => ({
+        id: e.id,
+        visitNumber: e.visitNumber,
+        language: e.language,
+        status: e.status,
+        departments: e.departments,
+        ownerName: e.ownerName,
+        lastModifiedBy: e.lastModifiedBy,
+        scheduleRows: e.scheduleRows,
+        attendeeConfirmations: e.attendeeConfirmations
+      })) : [],
       attachments: []
     };
   },
@@ -326,6 +358,7 @@ export const dbService = {
         status: updates.status,
         workflowStage: updates.workflowStage,
         deptPicIds: updates.deptPicIds,
+        departments: updates.departments,
         scope: updates.scope,
         planningDetails: updates.planningDetails,
         startDate: updates.startDate ? new Date(updates.startDate) : undefined,
@@ -346,7 +379,13 @@ export const dbService = {
       },
       include: {
         auditors: true,
-        attachments: true
+        attachments: true,
+        findings: {
+          include: {
+            auditor: true
+          }
+        },
+        executionSchedules: true
       }
     });
     return {
@@ -356,6 +395,7 @@ export const dbService = {
       status: p.status as any,
       workflowStage: p.workflowStage as any,
       deptPicIds: p.deptPicIds,
+      departments: p.departments,
       scope: p.scope,
       planningDetails: p.planningDetails,
       startDate: p.startDate.toISOString().split("T")[0],
@@ -373,6 +413,27 @@ export const dbService = {
       opExTimeline: p.opExTimeline,
       approvals: p.approvals,
       auditorIds: p.auditors.map(a => a.id),
+      findings: p.findings.map(f => ({
+        id: f.id,
+        title: f.title,
+        description: f.description,
+        status: f.status,
+        severity: f.severity,
+        recommendation: f.recommendation,
+        auditorName: f.auditor?.name,
+        createdAt: f.createdAt.toISOString()
+      })),
+      executionSchedules: p.executionSchedules.map(e => ({
+        id: e.id,
+        visitNumber: e.visitNumber,
+        language: e.language,
+        status: e.status,
+        departments: e.departments,
+        ownerName: e.ownerName,
+        lastModifiedBy: e.lastModifiedBy,
+        scheduleRows: e.scheduleRows,
+        attendeeConfirmations: e.attendeeConfirmations
+      })),
       attachments: p.attachments.map(a => ({
         id: a.id,
         fileName: a.fileName,
@@ -538,7 +599,7 @@ export const dbService = {
       projectId: s.projectId,
       projectName: s.project.name,
       projectCode: s.project.code,
-      organization: s.organization,
+      departments: s.departments,
       address: s.address,
       visitNumber: s.visitNumber,
       actualVisitDate: s.actualVisitDate,
@@ -553,6 +614,7 @@ export const dbService = {
       objectives: s.objectives,
       scope: s.scope,
       scheduleRows: s.scheduleRows,
+      attachments: s.attachments,
       ownerName: s.ownerName,
       lastModifiedBy: s.lastModifiedBy,
       createdAt: s.createdAt.toISOString(),
@@ -561,7 +623,7 @@ export const dbService = {
   },
   async createExecutionSchedule(data: {
     projectId: string;
-    organization: string;
+    departments: string;
     address: string;
     visitNumber: string;
     actualVisitDate: string;
@@ -576,6 +638,7 @@ export const dbService = {
     objectives: string;
     scope: string;
     scheduleRows: string;
+    attachments?: string;
     ownerName?: string;
     lastModifiedBy?: string;
   }): Promise<any> {
@@ -592,7 +655,7 @@ export const dbService = {
       projectId: s.projectId,
       projectName: s.project.name,
       projectCode: s.project.code,
-      organization: s.organization,
+      departments: s.departments,
       address: s.address,
       visitNumber: s.visitNumber,
       actualVisitDate: s.actualVisitDate,
@@ -607,6 +670,7 @@ export const dbService = {
       objectives: s.objectives,
       scope: s.scope,
       scheduleRows: s.scheduleRows,
+      attachments: s.attachments,
       ownerName: s.ownerName,
       lastModifiedBy: s.lastModifiedBy,
       createdAt: s.createdAt.toISOString(),
@@ -625,7 +689,7 @@ export const dbService = {
       projectId: s.projectId,
       projectName: s.project?.name,
       projectCode: s.project?.code,
-      organization: s.organization,
+      departments: s.departments,
       address: s.address,
       visitNumber: s.visitNumber,
       actualVisitDate: s.actualVisitDate,
@@ -640,6 +704,7 @@ export const dbService = {
       objectives: s.objectives,
       scope: s.scope,
       scheduleRows: s.scheduleRows,
+      attachments: s.attachments,
       ownerName: s.ownerName,
       lastModifiedBy: s.lastModifiedBy,
       createdAt: s.createdAt.toISOString(),
@@ -647,7 +712,7 @@ export const dbService = {
     };
   },
   async updateExecutionSchedule(id: string, data: Partial<{
-    organization: string;
+    departments: string;
     address: string;
     visitNumber: string;
     actualVisitDate: string;
@@ -662,10 +727,11 @@ export const dbService = {
     objectives: string;
     scope: string;
     scheduleRows: string;
+    attachments?: string;
     ownerName: string;
     lastModifiedBy: string;
   }>): Promise<any | null> {
-    const { attendeeConfirmations, ...updateData } = data;
+    const { attendeeConfirmations, projectId, ...updateData } = data as any;
     const s = await prisma.executionSchedule.update({
       where: { id },
       data: updateData,
@@ -679,7 +745,7 @@ export const dbService = {
       projectId: s.projectId,
       projectName: s.project.name,
       projectCode: s.project.code,
-      organization: s.organization,
+      departments: s.departments,
       address: s.address,
       visitNumber: s.visitNumber,
       actualVisitDate: s.actualVisitDate,

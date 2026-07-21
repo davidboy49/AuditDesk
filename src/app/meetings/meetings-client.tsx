@@ -25,7 +25,8 @@ import {
   User, 
   AuditProject, 
   ExecutionSchedule, 
-  ScheduleRow 
+  ScheduleRow,
+  Department 
 } from "@/lib/mockData";
 import { 
   createExecutionScheduleAction, 
@@ -124,6 +125,7 @@ interface MeetingsClientProps {
   initialSchedules: ExecutionSchedule[];
   projects: AuditProject[];
   users: User[];
+  departments: Department[];
   currentUser: User;
 }
 
@@ -131,6 +133,7 @@ export default function MeetingsClient({
   initialSchedules, 
   projects, 
   users, 
+  departments,
   currentUser 
 }: MeetingsClientProps) {
   const [schedules, setSchedules] = useState<ExecutionSchedule[]>(initialSchedules.filter(s => s.language === "meeting"));
@@ -146,7 +149,7 @@ export default function MeetingsClient({
   
   // Form fields
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [organization, setOrganization] = useState("");
+  const [departmentsStr, setDepartmentsStr] = useState("");
   const [address, setAddress] = useState("HB-HQ");
   const [visitNumber, setVisitNumber] = useState("01");
   const [actualVisitDate, setActualVisitDate] = useState("");
@@ -157,6 +160,7 @@ export default function MeetingsClient({
   const [standards, setStandards] = useState("Meeting Alignment Agenda");
   const [objectives, setObjectives] = useState("");
   const [scope, setScope] = useState("");
+  const [attachments, setAttachments] = useState<any[]>([]);
   const [rows, setRows] = useState<ScheduleRow[]>([]);
   const [meetingStatus, setMeetingStatus] = useState<"DRAFT" | "RELEASED">("DRAFT");
   const [attendeeConfirmations, setAttendeeConfirmations] = useState<Record<string, AttendeeConfirmation>>({});
@@ -203,9 +207,12 @@ export default function MeetingsClient({
     : [];
 
   // Convert additionalAttendees string to array for MultiSelect component
-  const additionalAttendeesArray = additionalAttendees
-    ? additionalAttendees.split(",").map(name => name.trim()).filter(Boolean)
-    : [];
+  const additionalAttendeesArray = additionalAttendees ? additionalAttendees.split(",").map(s => s.trim()).filter(Boolean) : [];
+  const setAdditionalAttendeesArray = (vals: string[]) => setAdditionalAttendees(vals.join(", "));
+
+  // Convert departments string to array for MultiSelect component
+  const departmentsArray = departmentsStr ? departmentsStr.split(",").map(s => s.trim()).filter(Boolean) : [];
+  const setDepartmentsArray = (vals: string[]) => setDepartmentsStr(vals.join(", "));
 
   const confirmedAttendeeCount = additionalAttendeesArray.filter(name => attendeeConfirmations[name]).length;
   const normalizeAttendeeName = (name: string) => name.trim().toLowerCase();
@@ -254,7 +261,7 @@ export default function MeetingsClient({
     setModalMode("create");
     setSelectedScheduleId(null);
     setSelectedProjectId("");
-    setOrganization("");
+    setDepartmentsStr("");
     setAddress("");
     setVisitNumber("");
     setActualVisitDate("");
@@ -266,6 +273,7 @@ export default function MeetingsClient({
     setObjectives("");
     setScope("");
     setRows([]);
+    setAttachments([]);
     setMeetingStatus("DRAFT");
     setAttendeeConfirmations({});
     setIsModalOpen(true);
@@ -274,7 +282,7 @@ export default function MeetingsClient({
   const openEditModal = (sched: ExecutionSchedule) => {
     setModalMode("edit");
     setSelectedProjectId(sched.projectId);
-    setOrganization(sched.organization);
+    setDepartmentsStr(sched.departments);
     setAddress(sched.address);
     setVisitNumber(sched.visitNumber);
     setActualVisitDate(sched.actualVisitDate);
@@ -287,6 +295,7 @@ export default function MeetingsClient({
     setAttendeeConfirmations(parseAttendeeConfirmations(sched.attendeeConfirmations));
     setObjectives(sched.objectives);
     setScope(sched.scope);
+    setAttachments(sched.attachments ? JSON.parse(sched.attachments) : []);
     
     try {
       setRows(JSON.parse(sched.scheduleRows));
@@ -318,14 +327,14 @@ export default function MeetingsClient({
       return false;
     }
 
-    if (!selectedProjectId || !organization || !actualVisitDate) {
-      alert("Please fill in the required fields.");
+    if (!selectedProjectId || !departmentsStr || !actualVisitDate) {
+      showFeedback("Please fill in the required fields (Project, Departments, Date).");
       return false;
     }
 
     const payload = {
       projectId: selectedProjectId,
-      organization,
+      departments: departmentsStr,
       address,
       visitNumber,
       actualVisitDate,
@@ -340,6 +349,7 @@ export default function MeetingsClient({
       objectives,
       scope,
       scheduleRows: JSON.stringify(rows),
+      attachments: JSON.stringify(attachments),
       ownerName: modalMode === "create" ? currentUser.name : (schedules.find(x => x.id === selectedScheduleId)?.ownerName || currentUser.name),
       lastModifiedBy: currentUser.name
     };
@@ -381,7 +391,7 @@ export default function MeetingsClient({
       return true;
     } catch (err: any) {
       console.error(err);
-      alert(`Save failed: ${err.message || err.toString()}`);
+      showFeedback(`Save failed: ${err.message || err.toString()}`);
       return false;
     }
   };
@@ -438,7 +448,7 @@ export default function MeetingsClient({
       }
     } catch (err: any) {
       console.error(err);
-      alert(`Confirmation failed: ${err.message || err.toString()}`);
+      showFeedback(`Confirmation failed: ${err.message || err.toString()}`);
     }
   };
 
@@ -457,7 +467,7 @@ export default function MeetingsClient({
       }
     } catch (err: any) {
       console.error(err);
-      alert(`Reopen failed: ${err.message || err.toString()}`);
+      showFeedback(`Reopen failed: ${err.message || err.toString()}`);
     }
   };
 
@@ -480,7 +490,7 @@ export default function MeetingsClient({
           }
         } catch (err: any) {
           console.error(err);
-          alert(`Delete error: ${err.message || err.toString()}`);
+          showFeedback(`Delete error: ${err.message || err.toString()}`);
         }
       }
     );
@@ -598,7 +608,7 @@ export default function MeetingsClient({
 
       {/* Feedback notifier */}
       {feedback && (
-        <div className="fixed bottom-8 right-8 z-[1100] flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-2xl text-xs font-sans font-semibold animate-slide-up border border-[#05375c] no-print">
+        <div className="fixed bottom-8 right-8 z-[1100] flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c] no-print">
           <span>{feedback}</span>
         </div>
       )}
@@ -634,7 +644,7 @@ export default function MeetingsClient({
                 <tr>
                   <th className="px-6 py-4">Audit Plan Code</th>
                   <th className="px-6 py-4">Project Name</th>
-                  <th className="px-6 py-4">Organization</th>
+                  <th className="px-6 py-4">Department(s)</th>
                   <th className="px-6 py-4">Meeting Date</th>
                   <th className="px-6 py-4">Facilitator</th>
                   <th className="px-6 py-4">Status</th>
@@ -670,7 +680,7 @@ export default function MeetingsClient({
                         {s.projectName}
                       </td>
                       <td className="px-6 py-4.5 text-slate-600 dark:text-slate-400">
-                        {s.organization}
+                        {s.departments}
                       </td>
                       <td className="px-6 py-4.5 text-slate-600 dark:text-slate-400">
                         {s.actualVisitDate}
@@ -816,48 +826,6 @@ export default function MeetingsClient({
                     </div>
                   </div>
                 </div>
-
-                {/* QR Code Right section */}
-                <div className="flex flex-col items-center gap-1.5 shrink-0 select-none">
-                  {selectedScheduleId ? (
-                    <>
-                      <div className="relative w-[110px] h-[110px] bg-white border border-slate-200 rounded p-1 flex items-center justify-center">
-                        <img 
-                          src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(
-                            typeof window !== "undefined" 
-                              ? `${window.location.origin}/meetings?id=${selectedScheduleId}` 
-                              : `/meetings?id=${selectedScheduleId}`
-                          )}`} 
-                          alt="QR Code" 
-                          className="w-[100px] h-[100px]"
-                        />
-                        <div className="absolute top-[43px] left-[43px] w-6 h-6 bg-white rounded-sm p-0.5 shadow-sm border border-slate-100 flex items-center justify-center">
-                          <img 
-                            src="/hanuman-logo.png" 
-                            alt="Logo" 
-                            className="w-full h-full object-contain"
-                          />
-                        </div>
-                      </div>
-                      <span className="text-[11px] font-roboto font-bold uppercase tracking-widest text-slate-700 dark:text-slate-300">
-                        {(() => {
-                          const clean = selectedScheduleId.replace(/-/g, "").toUpperCase();
-                          return `${clean.slice(0, 5)}-${clean.slice(5, 9)}`;
-                        })()}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <div className="relative w-[110px] h-[110px] bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded p-1 flex flex-col items-center justify-center text-center text-slate-400 gap-1">
-                        <BookOpen className="w-5 h-5 text-slate-350" />
-                        <span className="text-[8px] font-bold uppercase tracking-wider leading-tight">Save meeting to link QR</span>
-                      </div>
-                      <span className="text-[11px] font-roboto font-bold uppercase tracking-widest text-slate-400">
-                        PENDING-SAVE
-                      </span>
-                    </>
-                  )}
-                </div>
               </div>
 
               {/* Document Summary Info Grid */}
@@ -865,18 +833,20 @@ export default function MeetingsClient({
                 <div className="overflow-x-auto border border-slate-350 dark:border-slate-800 rounded-md">
                   <table className="w-full border-collapse text-xs">
                     <tbody>
-                      {/* Row 1: Organization */}
+                      {/* Row 1: Department */}
                       <tr className="border-b border-slate-300 dark:border-slate-800/80">
-                        <td className="w-1/4 px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
-                          Organization:
+                        <td className="w-1/4 px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300 align-top">
+                          Department(s):
                         </td>
                         <td colSpan={3} className="px-4 py-2">
-                          <input 
-                            type="text" 
-                            required
-                            value={organization}
-                            onChange={(e) => setOrganization(e.target.value)}
-                            className="w-full bg-transparent border-none p-0 text-xs focus:outline-none font-bold text-slate-800 dark:text-slate-100"
+                          <MultiSelect
+                            selectedValues={departmentsArray}
+                            onChange={setDepartmentsArray}
+                            options={departments.map(d => ({
+                              value: d.name,
+                              label: d.name
+                            }))}
+                            placeholder="Select Department(s)..."
                           />
                         </td>
                       </tr>
@@ -1008,6 +978,70 @@ export default function MeetingsClient({
 
                     </tbody>
                   </table>
+                </div>
+              </div>
+
+              {/* Attachments Section */}
+              <div className="space-y-4 pt-6 border-t border-slate-200 dark:border-slate-800">
+                <h3 className="text-sm font-sans font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                  Attachments
+                </h3>
+                <div className="space-y-3">
+                  <input
+                    type="file"
+                    disabled={isLocked}
+                    className="block w-full text-xs text-slate-500
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded-full file:border-0
+                      file:text-xs file:font-semibold
+                      file:bg-[#0066cc]/10 file:text-[#0066cc]
+                      hover:file:bg-[#0066cc]/20
+                      disabled:opacity-50 disabled:cursor-not-allowed
+                    "
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const base64 = event.target?.result;
+                        if (typeof base64 === 'string') {
+                          setAttachments([...attachments, {
+                            id: Date.now().toString(),
+                            name: file.name,
+                            size: file.size,
+                            type: file.type,
+                            data: base64
+                          }]);
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                      e.target.value = ''; // reset input
+                    }}
+                  />
+                  {attachments.length > 0 && (
+                    <ul className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg">
+                      {attachments.map((att) => (
+                        <li key={att.id} className="p-3 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                          <div className="flex items-center gap-3">
+                            <FileDown className="w-4 h-4 text-slate-400" />
+                            <a href={att.data} download={att.name} className="text-sm font-medium text-[#0066cc] hover:underline">
+                              {att.name}
+                            </a>
+                            <span className="text-xs text-slate-500">({Math.round(att.size / 1024)} KB)</span>
+                          </div>
+                          {!isLocked && canManage && (
+                            <button
+                              type="button"
+                              onClick={() => setAttachments(attachments.filter(a => a.id !== att.id))}
+                              className="p-1 text-slate-400 hover:text-red-500 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
               </div>
 

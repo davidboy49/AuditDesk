@@ -7,12 +7,14 @@ export default async function MeetingsPage() {
   const projects = await dbService.getProjects();
   const schedules = await dbService.getExecutionSchedules();
   const users = await dbService.getUsers();
+  const departments = await dbService.getDepartments();
 
   return (
     <MeetingsClient
       initialSchedules={schedules}
       projects={projects}
       users={users}
+      departments={departments}
       currentUser={currentUser}
     />
   );

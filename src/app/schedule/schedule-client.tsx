@@ -17,9 +17,10 @@ import {
   BookOpen
 } from "lucide-react";
 import { 
-  User, 
-  AuditProject, 
   ExecutionSchedule, 
+  AuditProject, 
+  User, 
+  Department,
   ScheduleRow 
 } from "@/lib/mockData";
 import { 
@@ -98,13 +99,15 @@ interface ScheduleClientProps {
   initialSchedules: ExecutionSchedule[];
   projects: AuditProject[];
   users: User[];
-  currentUser: User;
+  departments: Department[];
+  currentUser: User | null;
 }
 
 export default function ScheduleClient({ 
   initialSchedules, 
   projects, 
   users, 
+  departments,
   currentUser 
 }: ScheduleClientProps) {
   const [schedules, setSchedules] = useState<ExecutionSchedule[]>(initialSchedules.filter(s => s.language !== "finding" && s.language !== "meeting"));
@@ -120,7 +123,8 @@ export default function ScheduleClient({
   
   // Form fields
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [organization, setOrganization] = useState("");
+  const [selectedMeetingId, setSelectedMeetingId] = useState("");
+  const [departmentsStr, setDepartmentsStr] = useState("");
   const [address, setAddress] = useState("HB-HQ");
   const [visitNumber, setVisitNumber] = useState("01");
   const [actualVisitDate, setActualVisitDate] = useState("");
@@ -176,9 +180,12 @@ export default function ScheduleClient({
     : [];
 
   // Convert additionalAttendees string to array for MultiSelect component
-  const additionalAttendeesArray = additionalAttendees
-    ? additionalAttendees.split(",").map(name => name.trim()).filter(Boolean)
-    : [];
+  const additionalAttendeesArray = additionalAttendees ? additionalAttendees.split(",").map(s => s.trim()).filter(Boolean) : [];
+  const setAdditionalAttendeesArray = (vals: string[]) => setAdditionalAttendees(vals.join(", "));
+
+  // Convert departments string to array for MultiSelect component
+  const departmentsArray = departmentsStr ? departmentsStr.split(",").map(s => s.trim()).filter(Boolean) : [];
+  const setDepartmentsArray = (vals: string[]) => setDepartmentsStr(vals.join(", "));
 
   // Options derived from users in system
   const userOptions = users.map(u => ({
@@ -189,99 +196,95 @@ export default function ScheduleClient({
 
   const isProjectMember = (proj: any) => {
     if (!proj) return false;
-    if (currentUser.role === "ADMIN") return true;
-    if (proj.leadAuditorId === currentUser.id) return true;
+    if (currentUser?.role === "ADMIN") return true;
+    if (proj.leadAuditorId === currentUser?.id) return true;
     const auditorsList = proj.auditorNames ? proj.auditorNames.split(",").map((s: string) => s.trim()) : [];
-    if (auditorsList.includes(currentUser.name)) return true;
-    if (proj.auditorIds?.includes(currentUser.id)) return true;
+    if (auditorsList.includes(currentUser?.name)) return true;
+    if (proj.auditorIds?.includes(currentUser?.id)) return true;
     const picList = proj.deptPicIds ? proj.deptPicIds.split(",") : [];
-    if (picList.includes(currentUser.id) || picList.includes(currentUser.name)) return true;
+    if (picList.includes(currentUser?.id) || picList.includes(currentUser?.name)) return true;
     return false;
   };
 
   const isScheduleOrMeetingAllowed = (sched: any) => {
     if (!sched) return false;
-    if (currentUser.role === "ADMIN") return true;
-    if (sched.ownerName === currentUser.name || sched.lastModifiedBy === currentUser.name) return true;
+    if (currentUser?.role === "ADMIN") return true;
+    if (sched.ownerName === currentUser?.name || sched.lastModifiedBy === currentUser?.name) return true;
     const proj = projects.find(p => p.id === sched.projectId);
     return isProjectMember(proj);
   };
 
   const canManage = true;
 
-  const showFeedback = (msg: string) => {
+  const showFeedback = (msg: string, type: "success" | "error" = "success") => {
     setFeedback(msg);
     setTimeout(() => setFeedback(null), 3000);
   };
 
-  // Prepopulate schedule fields when project is selected in Create mode
-  const handleProjectSelect = (projId: string) => {
-    setSelectedProjectId(projId);
-    if (!projId) return;
+  // Prepopulate schedule fields when open meeting is selected in Create mode
+  const handleMeetingSelect = (meetingId: string) => {
+    setSelectedMeetingId(meetingId);
+    if (!meetingId) {
+      setSelectedProjectId("");
+      return;
+    }
 
-    const proj = projects.find(p => p.id === projId);
-    if (!proj) return;
+    const meeting = initialSchedules.find(s => s.id === meetingId);
+    if (!meeting) return;
 
-    // Organization mapping based on Lead Auditor's department or default
-    const leadUser = users.find(u => u.id === proj.leadAuditorId);
-    const orgVal = leadUser?.departmentName ? `${leadUser.departmentName} Department` : "Finance Department";
-    setOrganization(orgVal);
+    setSelectedProjectId(meeting.projectId);
+    setDepartmentsStr(meeting.departments || "");
+    setAddress(meeting.address || "HB-HQ");
+    setVisitNumber(meeting.visitNumber || "01");
+    setActualVisitDate(meeting.actualVisitDate || "");
+    setAuditPeriod(meeting.auditPeriod || "");
+    setLeadExecution(meeting.leadExecution || "");
+    setTeamMembers(meeting.teamMembers || "");
+    setAdditionalAttendees(meeting.additionalAttendees || "");
+    setStandards(meeting.standards || "Work Procedure, work instruction, and policy");
+    setObjectives(meeting.objectives || "");
+    setScope(meeting.scope || "");
 
-    // Date formatting (e.g. 20-31 July 2026)
-    setActualVisitDate(`${proj.startDate} to ${proj.endDate}`);
-    
-    // Default Audit Period (usually preceding 3 months)
-    setAuditPeriod("1 Apr - 30 Jun 2026 (Three months)");
-
-    // Lead Execution name
-    setLeadExecution(leadUser?.name || "Mr. El Thany");
-
-    // Retrieve implicit Auditors and PICs names
-    const auditorNames = users
-      .filter(u => proj.auditorIds?.includes(u.id))
-      .map(u => u.name)
-      .join(", ") || "Hong Solina, Mao Sokpisith";
-    setTeamMembers(auditorNames);
-
-    const picNames = users
-      .filter(u => proj.deptPicIds?.split(",").includes(u.id))
-      .map(u => u.name)
-      .join(", ") || "Kong Thida, Malyneth";
-    setAdditionalAttendees(picNames);
-
-    setObjectives(proj.objectives || "");
-    setScope(proj.scope || "");
-
-    // Default template schedule rows matching word document "2. Schedule"
-    setRows([
-      {
-        date: "17-Jul-26",
-        time: "9:30am-10:00am",
-        activity: "- Open Meeting & discuss any SOP or Work Instruction updated.\n\nDocument request:\n- Policy, work procedure/instruction up to date related to Expenses, Revenue, & Fixed Asset.\n- General ledger & Trial balance from 01 April to 30 June 2026\n- Listing (Expense, Revenue, Fixed Asset)\n- Fixed asset register Addition from 1st August 2025 to 30th June 2026\n- Fixed asset movement and disposal listing\n- Bank Statement\n- Supporting document like PVs, invoices, and related supporting document.\n- Sample select email confirm",
-        conductBy: leadUser?.name || "El Thany",
-        pIncharge: picNames || "Kong Thida, Malyneth"
-      },
-      {
-        date: "20-29 Jul",
-        time: "8:00am-6:00pm",
-        activity: "- Review Expenses Management\n- Review Revenue Management\n- Review Fixed Asset Management\n- Fixed Asset physical count (samples select)",
-        conductBy: leadUser?.name || "El Thany",
-        pIncharge: "Da Pich"
-      },
-      {
-        date: "30 Jul",
-        time: "9:00am-11:00am",
-        activity: "- Final Issues Clarification",
-        conductBy: leadUser?.name || "El Thany",
-        pIncharge: "Chanthorn"
+    // Prepopulate rows
+    if (meeting.scheduleRows) {
+      try {
+        setRows(JSON.parse(meeting.scheduleRows));
+      } catch {
+        setRows([
+          {
+            day: "Day 1",
+            date: "17-Jul-26",
+            time: "9:30am-10:00am",
+            activity: "- Open Meeting & discuss any SOP or Work Instruction updated.\n\nDocument request:\n- Policy, work procedure/instruction up to date related to Expenses, Revenue, & Fixed Asset.\n- General ledger & Trial balance from 01 April to 30 June 2026\n- Listing (Expense, Revenue, Fixed Asset)\n- Fixed asset register Addition from 1st August 2025 to 30th June 2026\n- Fixed asset movement and disposal listing\n- Bank Statement\n- Supporting document like PVs, invoices, and related supporting document.\n- Sample select email confirm",
+            conductBy: meeting.leadExecution || "El Thany",
+            pIncharge: meeting.additionalAttendees || "Kong Thida, Malyneth"
+          },
+          {
+            day: "Day 2-3",
+            date: "20-29 Jul",
+            time: "8:00am-6:00pm",
+            activity: "- Review Expenses Management\n- Review Revenue Management\n- Review Fixed Asset Management\n- Fixed Asset physical count (samples select)",
+            conductBy: meeting.leadExecution || "El Thany",
+            pIncharge: "Da Pich"
+          },
+          {
+            day: "Day 4",
+            date: "30 Jul",
+            time: "9:00am-11:00am",
+            activity: "- Final Issues Clarification",
+            conductBy: meeting.leadExecution || "El Thany",
+            pIncharge: "Chanthorn"
+          }
+        ]);
       }
-    ]);
+    }
   };
 
   const openCreateModal = () => {
     setModalMode("create");
     setSelectedProjectId("");
-    setOrganization("");
+    setSelectedMeetingId("");
+    setDepartmentsStr("");
     setAddress("HB-HQ");
     setVisitNumber("01");
     setActualVisitDate("");
@@ -300,7 +303,7 @@ export default function ScheduleClient({
   const openEditModal = (sched: ExecutionSchedule) => {
     setModalMode("edit");
     setSelectedProjectId(sched.projectId);
-    setOrganization(sched.organization);
+    setDepartmentsStr(sched.departments);
     setAddress(sched.address);
     setVisitNumber(sched.visitNumber);
     setActualVisitDate(sched.actualVisitDate);
@@ -340,14 +343,14 @@ export default function ScheduleClient({
 
   const handleSaveSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProjectId || !organization || !actualVisitDate) {
-      alert("Please fill in the required fields.");
+    if (!selectedProjectId || !departmentsStr || !actualVisitDate) {
+      showFeedback("Please select a project, department, and actual visit date before saving.", "error");
       return;
     }
 
     const payload = {
       projectId: selectedProjectId,
-      organization,
+      departments: departmentsStr,
       address,
       visitNumber,
       actualVisitDate,
@@ -405,7 +408,7 @@ export default function ScheduleClient({
       }
     } catch (err: any) {
       console.error(err);
-      alert(`Save failed: ${err.message || err.toString()}`);
+      showFeedback(`Save failed: ${err.message || err.toString()}`);
     }
   };
 
@@ -428,7 +431,7 @@ export default function ScheduleClient({
           }
         } catch (err: any) {
           console.error(err);
-          alert(`Delete error: ${err.message || err.toString()}`);
+          showFeedback(`Delete error: ${err.message || err.toString()}`);
         }
       }
     );
@@ -545,7 +548,7 @@ export default function ScheduleClient({
 
       {/* Feedback notifier */}
       {feedback && (
-        <div className="fixed bottom-8 right-8 z-50 flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c] no-print">
+        <div className="fixed bottom-8 right-8 z-[1100] flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c] no-print">
           <span>{feedback}</span>
         </div>
       )}
@@ -581,7 +584,7 @@ export default function ScheduleClient({
                 <tr>
                   <th className="px-6 py-4">Audit Plan Code</th>
                   <th className="px-6 py-4">Project Name</th>
-                  <th className="px-6 py-4">Organization</th>
+                  <th className="px-6 py-4">Department(s)</th>
                   <th className="px-6 py-4">Visit Date</th>
                   <th className="px-6 py-4">Lead Auditor</th>
                 </tr>
@@ -616,7 +619,7 @@ export default function ScheduleClient({
                         {s.projectName}
                       </td>
                       <td className="px-6 py-4.5 text-slate-600 dark:text-slate-400">
-                        {s.organization}
+                        {s.departments}
                       </td>
                       <td className="px-6 py-4.5 text-slate-600 dark:text-slate-400">
                         {s.actualVisitDate}
@@ -678,25 +681,27 @@ export default function ScheduleClient({
             {/* Modal Scrollable Body */}
             <form onSubmit={handleSaveSchedule} className="p-8 space-y-8 overflow-y-auto max-h-[86vh]">
               
-              {/* Select Project Plan dropdown (only in create mode) */}
+              {/* Select Open Meeting dropdown (only in create mode) */}
               <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-850 space-y-3 no-print">
                 <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
                   <Info className="w-4 h-4 text-[#0066cc]" />
-                  <span>Choose an Audit Plan to extract scoping details and pre-populate schedule fields.</span>
+                  <span>Choose an Open Meeting to extract details and pre-populate schedule fields.</span>
                 </div>
                 {modalMode === "create" ? (
                   <select
                     required
-                    value={selectedProjectId}
-                    onChange={(e) => handleProjectSelect(e.target.value)}
+                    value={selectedMeetingId}
+                    onChange={(e) => handleMeetingSelect(e.target.value)}
                     className="w-full bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 rounded-md px-3 py-2 text-xs focus:outline-none cursor-pointer text-slate-800 dark:text-slate-200"
                   >
-                    <option value="">Choose Audit Plan...</option>
-                    {projects.filter(isProjectMember).map(p => (
-                      <option key={p.id} value={p.id}>
-                        {p.code} - {p.name} ({p.status})
-                      </option>
-                    ))}
+                    <option value="">Choose Open Meeting...</option>
+                    {initialSchedules
+                      .filter(s => s.language === "meeting")
+                      .map(m => (
+                        <option key={m.id} value={m.id}>
+                          {m.visitNumber ? `${m.visitNumber} - ` : ""}{m.departments} ({projects.find(p => p.id === m.projectId)?.code || m.projectId})
+                        </option>
+                      ))}
                   </select>
                 ) : (
                   <div className="text-xs font-sans font-bold text-slate-800 dark:text-slate-200">
@@ -710,19 +715,20 @@ export default function ScheduleClient({
                 <div className="overflow-x-auto border border-slate-350 dark:border-slate-800 rounded-md">
                   <table className="w-full border-collapse text-xs">
                     <tbody>
-                      {/* Row 1: Organization */}
+                      {/* Row 1: Departments */}
                       <tr className="border-b border-slate-300 dark:border-slate-800/80">
-                        <td className="w-1/4 px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
-                          Organization:
+                        <td className="w-1/4 px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300 align-top">
+                          Department(s):
                         </td>
                         <td colSpan={3} className="px-4 py-2">
-                          <input 
-                            type="text" 
-                            required
-                            value={organization}
-                            onChange={(e) => setOrganization(e.target.value)}
-                            placeholder="Finance Department"
-                            className="w-full bg-transparent border-none p-0 text-xs focus:outline-none font-bold text-slate-800 dark:text-slate-100"
+                          <MultiSelect
+                            selectedValues={departmentsArray}
+                            onChange={setDepartmentsArray}
+                            options={departments.map(d => ({
+                              value: d.name,
+                              label: d.name
+                            }))}
+                            placeholder="Select Department(s)..."
                           />
                         </td>
                       </tr>

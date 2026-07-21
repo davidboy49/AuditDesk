@@ -155,7 +155,7 @@ export default function DepartmentsClient({
 
       {/* Feedback notifier */}
       {feedback && (
-        <div className="fixed bottom-8 right-8 z-50 flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c]">
+        <div className="fixed bottom-8 right-8 z-[1100] flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c] no-print">
           <span>{feedback}</span>
         </div>
       )}

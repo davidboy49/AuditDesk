@@ -20,7 +20,8 @@ import {
   User, 
   AuditProject, 
   ExecutionSchedule as FindingReport, 
-  ScheduleRow as FindingRow 
+  ScheduleRow as FindingRow,
+  Department
 } from "@/lib/mockData";
 import { 
   createExecutionScheduleAction as createFindingReportAction, 
@@ -118,6 +119,7 @@ interface FindingsClientProps {
   initialSchedules: FindingReport[];
   projects: AuditProject[];
   users: User[];
+  departments: Department[];
   currentUser: User;
 }
 
@@ -125,6 +127,7 @@ export default function FindingsClient({
   initialSchedules, 
   projects, 
   users, 
+  departments,
   currentUser 
 }: FindingsClientProps) {
   const [schedules, setSchedules] = useState<FindingReport[]>(initialSchedules.filter(s => s.language === "finding"));
@@ -140,7 +143,7 @@ export default function FindingsClient({
   
   // Form fields
   const [selectedProjectId, setSelectedProjectId] = useState("");
-  const [organization, setOrganization] = useState("");
+  const [departmentsStr, setDepartmentsStr] = useState("");
   const [address, setAddress] = useState("HB-HQ");
   const [visitNumber, setVisitNumber] = useState("NCN #001/26");
   const [actualVisitDate, setActualVisitDate] = useState("");
@@ -152,6 +155,7 @@ export default function FindingsClient({
   const [language, setLanguage] = useState("finding"); // Hidden type flag
   const [objectives, setObjectives] = useState("");
   const [scope, setScope] = useState("");
+  const [attachments, setAttachments] = useState<any[]>([]);
   const [rows, setRows] = useState<FindingRow[]>([]);
   // Active row index for card editing
   const [activeRowIndex, setActiveRowIndex] = useState<number | null>(null);
@@ -194,9 +198,12 @@ export default function FindingsClient({
     : [];
 
   // Convert additionalAttendees string to array for MultiSelect component
-  const additionalAttendeesArray = additionalAttendees
-    ? additionalAttendees.split(",").map(name => name.trim()).filter(Boolean)
-    : [];
+  const additionalAttendeesArray = additionalAttendees ? additionalAttendees.split(",").map(s => s.trim()).filter(Boolean) : [];
+  const setAdditionalAttendeesArray = (vals: string[]) => setAdditionalAttendees(vals.join(", "));
+
+  // Convert departments string to array for MultiSelect component
+  const departmentsArray = departmentsStr ? departmentsStr.split(",").map(s => s.trim()).filter(Boolean) : [];
+  const setDepartmentsArray = (vals: string[]) => setDepartmentsStr(vals.join(", "));
 
   // Options derived from users in system
   const userOptions = users.map(u => ({
@@ -241,8 +248,8 @@ export default function FindingsClient({
     if (!proj) return;
 
     const leadUser = users.find(u => u.id === proj.leadAuditorId);
-    const orgVal = leadUser?.departmentName ? `${leadUser.departmentName} Department` : "";
-    setOrganization(orgVal);
+    const orgVal = leadUser?.departmentName ? `${leadUser.departmentName}` : "";
+    setDepartmentsStr(orgVal);
 
     const formatDate = (dateStr: string | Date) => {
       if (!dateStr) return "";
@@ -288,7 +295,7 @@ export default function FindingsClient({
   const openCreateModal = () => {
     setModalMode("create");
     setSelectedProjectId("");
-    setOrganization("");
+    setDepartmentsStr("");
     setAddress("");
     setVisitNumber("");
     setActualVisitDate("");
@@ -301,13 +308,14 @@ export default function FindingsClient({
     setObjectives("");
     setScope("");
     setRows([]);
+    setAttachments([]);
     setIsModalOpen(true);
   };
 
   const openEditModal = (sched: FindingReport) => {
     setModalMode("edit");
     setSelectedProjectId(sched.projectId);
-    setOrganization(sched.organization);
+    setDepartmentsStr(sched.departments);
     setAddress(sched.address);
     setVisitNumber(sched.visitNumber);
     setActualVisitDate(sched.actualVisitDate);
@@ -319,6 +327,7 @@ export default function FindingsClient({
     setLanguage(sched.language || "finding");
     setObjectives(sched.objectives);
     setScope(sched.scope);
+    setAttachments(sched.attachments ? JSON.parse(sched.attachments) : []);
     
     try {
       setRows(JSON.parse(sched.scheduleRows));
@@ -348,14 +357,14 @@ export default function FindingsClient({
 
   const handleSaveSchedule = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedProjectId || !organization || !actualVisitDate) {
-      alert("Please fill in the required fields.");
+    if (!selectedProjectId || !departmentsStr || !actualVisitDate) {
+      showFeedback("Please select a project, department, and actual visit date before saving.");
       return;
     }
 
     const payload = {
       projectId: selectedProjectId,
-      organization,
+      departments: departmentsStr,
       address,
       visitNumber,
       actualVisitDate,
@@ -367,7 +376,10 @@ export default function FindingsClient({
       language: "finding", // Enforce type flag
       objectives,
       scope,
-      scheduleRows: JSON.stringify(rows)
+      scheduleRows: JSON.stringify(rows),
+      attachments: JSON.stringify(attachments),
+      ownerName: currentUser.name,
+      lastModifiedBy: currentUser.name,
     };
 
     try {
@@ -380,7 +392,7 @@ export default function FindingsClient({
           setSchedules(fresh.filter((s: any) => s.language === "finding"));
 
           const emailResult = await sendEmailNotificationAction("findings", payload.projectId, {
-            findingTitle: payload.organization,
+            findingTitle: payload.departments,
             severity: payload.standards,
             recommendation: rows.map(r => r.recommendation).filter(Boolean).join(", ") || "Please review recommendations."
           });
@@ -400,7 +412,7 @@ export default function FindingsClient({
           setSchedules(fresh.filter((s: any) => s.language === "finding"));
 
           const emailResult = await sendEmailNotificationAction("findings", payload.projectId, {
-            findingTitle: payload.organization,
+            findingTitle: payload.departments,
             severity: payload.standards,
             recommendation: rows.map(r => r.recommendation).filter(Boolean).join(", ") || "Please review recommendations."
           });
@@ -413,7 +425,7 @@ export default function FindingsClient({
       }
     } catch (err: any) {
       console.error(err);
-      alert(`Save failed: ${err.message || err.toString()}`);
+      showFeedback(`Save failed: ${err.message || err.toString()}`);
     }
   };
 
@@ -436,7 +448,7 @@ export default function FindingsClient({
           }
         } catch (err: any) {
           console.error(err);
-          alert(`Delete error: ${err.message || err.toString()}`);
+          showFeedback(`Delete error: ${err.message || err.toString()}`);
         }
       }
     );
@@ -563,16 +575,29 @@ export default function FindingsClient({
     setRows(updated);
   };
 
-  const completedFinalRowsCount = rows.filter(row => !!row.correctiveFinalDate).length;
-  const pendingFinalRowsCount = rows.filter(row => !row.correctiveFinalDate).length;
+  const completedFinalRowsCount = rows.filter(row => !!row.correctiveFinalUser).length;
+  const pendingFinalRowsCount = rows.filter(row => !row.correctiveFinalUser).length;
 
   const markDraftRowFinalized = () => {
     if (!draftRow) return;
+    
+    // If it's already completed, we toggle it back to pending
+    if (draftRow.correctiveFinalUser) {
+      setDraftRow({
+        ...draftRow,
+        correctiveFinalUser: "",
+        correctiveFinalDatetime: ""
+      });
+      return;
+    }
+    
+    // Otherwise, mark as completed with current user and datetime
     const today = new Date();
-    const finalDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    
     setDraftRow({
       ...draftRow,
-      correctiveFinalDate: finalDate
+      correctiveFinalUser: currentUser.name,
+      correctiveFinalDatetime: today.toISOString()
     });
   };
   const moveRowDown = (index: number) => {
@@ -587,7 +612,7 @@ export default function FindingsClient({
   // Filtered schedules for rendering in list
   const filteredSchedules = schedules.filter(s => {
     const matchesSearch = s.projectName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          s.organization?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          s.departments?.toLowerCase().includes(searchQuery.toLowerCase()) ||
                           s.standards?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesProject = projectFilter === "ALL" || s.projectId === projectFilter;
     return matchesSearch && matchesProject;
@@ -605,9 +630,8 @@ export default function FindingsClient({
       
       {/* Dynamic Feedback Popup Alert */}
       {feedback && (
-        <div className="fixed top-4 right-4 bg-emerald-600 text-white px-4 py-2 rounded shadow-lg z-[60] flex items-center gap-2 animate-bounce">
-          <Save className="w-4 h-4" />
-          <span className="text-xs font-bold font-sans">{feedback}</span>
+        <div className="fixed bottom-8 right-8 z-[1100] flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c] no-print">
+          <span>{feedback}</span>
         </div>
       )}
 
@@ -677,7 +701,7 @@ export default function FindingsClient({
                 <tr>
                   <th className="px-6 py-4">Audit Plan Code</th>
                   <th className="px-6 py-4">Project Name</th>
-                  <th className="px-6 py-4">Organization</th>
+                  <th className="px-6 py-4">Department(s)</th>
                   <th className="px-6 py-4">Finding Date</th>
                   <th className="px-6 py-4">Lead Auditor</th>
                 </tr>
@@ -712,7 +736,7 @@ export default function FindingsClient({
                         {s.projectName}
                       </td>
                       <td className="px-6 py-4.5 text-slate-600 dark:text-slate-400">
-                        {s.organization}
+                        {s.departments}
                       </td>
                       <td className="px-6 py-4.5 text-slate-600 dark:text-slate-400">
                         {s.actualVisitDate}
@@ -813,19 +837,20 @@ export default function FindingsClient({
                 <div className="border border-[#0066cc] rounded-lg relative z-30">
                   <table className="w-full border-collapse text-xs">
                     <tbody className="divide-y divide-slate-200 dark:divide-slate-800">
-                      {/* Row 1: Organization */}
-                      <tr className="align-middle">
-                        <td className="w-1/4 px-6 py-4 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-[#0066cc]/40 text-slate-700 dark:text-slate-300">
-                          Organization
+                      {/* Row 1: Department */}
+                      <tr className="border-b border-slate-300 dark:border-slate-800/80">
+                        <td className="w-1/4 px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300 align-top">
+                          Department(s)
                         </td>
-                        <td className="px-6 py-3">
-                          <input 
-                            type="text" 
-                            required
-                            value={organization}
-                            onChange={(e) => setOrganization(e.target.value)}
-                            placeholder="Sales Distribution Function"
-                            className="w-full bg-transparent border-none p-0 text-xs focus:outline-none font-bold text-slate-800 dark:text-slate-100"
+                        <td colSpan={3} className="px-4 py-2">
+                          <MultiSelect
+                            selectedValues={departmentsArray}
+                            onChange={setDepartmentsArray}
+                            options={departments.map(d => ({
+                              value: d.name,
+                              label: d.name
+                            }))}
+                            placeholder="Select Department(s)..."
                           />
                         </td>
                       </tr>
@@ -1022,31 +1047,39 @@ export default function FindingsClient({
                               </div>
 
                               <div className="border border-slate-200 dark:border-slate-800 focus-within:border-blue-500 focus-within:ring-1 focus-within:ring-blue-500 rounded-md p-4 bg-white dark:bg-slate-950/20 space-y-4 transition-all">
-                                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                                  <div className="flex items-center gap-3">
-                                    <span className="text-sm font-bold text-slate-700 dark:text-slate-300 w-40 sm:shrink-0">
-                                      Corrective Final Date:
-                                    </span>
-                                    <input 
-                                      type="date"
-                                      required
-                                      value={draftRow.correctiveFinalDate || ""}
-                                      onChange={(e) => setDraftRow({ ...draftRow, correctiveFinalDate: e.target.value })}
-                                      className="px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer w-full max-w-[200px]"
-                                    />
+                                  <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                    <div className="flex items-center gap-3">
+                                      <span className="text-sm font-bold text-slate-700 dark:text-slate-300 w-40 sm:shrink-0">
+                                        Corrective Final Date:
+                                      </span>
+                                      <input 
+                                        type="date"
+                                        required
+                                        value={draftRow.correctiveFinalDate || ""}
+                                        onChange={(e) => setDraftRow({ ...draftRow, correctiveFinalDate: e.target.value })}
+                                        className="px-3 py-1.5 text-xs border border-slate-200 dark:border-slate-800 rounded bg-white dark:bg-slate-950 text-slate-800 dark:text-slate-200 focus:outline-none focus:border-blue-500 cursor-pointer w-full max-w-[200px]"
+                                      />
+                                    </div>
+                                    <div className="flex items-center gap-3">
+                                      {draftRow.correctiveFinalUser && (
+                                        <div className="flex flex-col text-xs text-slate-500 text-right">
+                                          <span>Verified by {draftRow.correctiveFinalUser}</span>
+                                          <span>at {draftRow.correctiveFinalDatetime ? new Date(draftRow.correctiveFinalDatetime).toLocaleString() : ""}</span>
+                                        </div>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={markDraftRowFinalized}
+                                        className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md border text-xs font-bold transition-colors ${
+                                          draftRow.correctiveFinalUser
+                                            ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/15"
+                                            : "bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600"
+                                        }`}
+                                      >
+                                        {draftRow.correctiveFinalUser ? "Completed" : "Mark as completed"}
+                                      </button>
+                                    </div>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onClick={markDraftRowFinalized}
-                                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-md border text-xs font-bold transition-colors ${
-                                      draftRow.correctiveFinalDate
-                                        ? "bg-emerald-500/10 border-emerald-500/20 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-500/15"
-                                        : "bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600"
-                                    }`}
-                                  >
-                                    {draftRow.correctiveFinalDate ? "Completed" : "Mark as completed"}
-                                  </button>
-                                </div>
                                 <div className="space-y-1.5">
                                   <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 w-40 sm:shrink-0">Remarks</label>
                                   <RichEditor 
@@ -1150,7 +1183,9 @@ export default function FindingsClient({
                                         <div className="w-1 h-3 bg-[#10b981] rounded-full" />
                                         <span className="font-bold text-emerald-700 dark:text-emerald-400">Final Verification</span>
                                         {row.correctiveFinalDate && (
-                                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-sans">({formatDateString(row.correctiveFinalDate)})</span>
+                                          <span className="text-[10px] text-slate-400 dark:text-slate-500 font-sans">
+                                            (Completed by {row.correctiveFinalUser || "Unknown"} on {row.correctiveFinalDatetime ? new Date(row.correctiveFinalDatetime).toLocaleString() : formatDateString(row.correctiveFinalDate)})
+                                          </span>
                                         )}
                                       </div>
                                       {!isHtmlEmpty(row.correctiveFinalRemarks) && (
@@ -1188,8 +1223,72 @@ export default function FindingsClient({
                       )}
                     </tbody>
                   </table>
+              </div>
+
+              {/* Attachments Section */}
+              <div className="space-y-4 pt-6 border-t border-slate-200 dark:border-slate-800">
+                <h3 className="text-sm font-sans font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
+                  Attachments
+                </h3>
+                <div className="space-y-3">
+                  <input
+                    type="file"
+                    className="block w-full text-xs text-slate-500
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded-full file:border-0
+                      file:text-xs file:font-semibold
+                      file:bg-[#0066cc]/10 file:text-[#0066cc]
+                      hover:file:bg-[#0066cc]/20
+                    "
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const base64 = event.target?.result;
+                        if (typeof base64 === 'string') {
+                          setAttachments([...attachments, {
+                            id: Date.now().toString(),
+                            name: file.name,
+                            size: file.size,
+                            type: file.type,
+                            data: base64
+                          }]);
+                        }
+                      };
+                      reader.readAsDataURL(file);
+                      e.target.value = ''; // reset input
+                    }}
+                  />
+                  {attachments.length > 0 && (
+                    <ul className="divide-y divide-slate-200 dark:divide-slate-800 border border-slate-200 dark:border-slate-800 rounded-lg">
+                      {attachments.map((att) => (
+                        <li key={att.id} className="p-3 flex items-center justify-between hover:bg-slate-50 dark:hover:bg-slate-900/50">
+                          <div className="flex items-center gap-3">
+                            <FileDown className="w-4 h-4 text-slate-400" />
+                            <a href={att.data} download={att.name} className="text-sm font-medium text-[#0066cc] hover:underline">
+                              {att.name}
+                            </a>
+                            <span className="text-xs text-slate-500">({Math.round(att.size / 1024)} KB)</span>
+                          </div>
+                          {canManage && (
+                            <button
+                              type="button"
+                              onClick={() => setAttachments(attachments.filter(a => a.id !== att.id))}
+                              className="p-1 text-slate-400 hover:text-red-500 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
                 </div>
-              </div>            </form>
+              </div>
+              </div>
+
+            </form>
           </div>
         </div>
       )}

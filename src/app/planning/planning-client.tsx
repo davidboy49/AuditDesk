@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { 
   Calendar, 
   FileText, 
@@ -27,9 +27,14 @@ import {
   CheckCircle,
   XCircle,
   RotateCcw,
-  Mail
+  Mail,
+  BookOpen,
+  CheckCircle2,
+  QrCode,
+  Maximize2,
+  Check
 } from "lucide-react";
-import { AuditProject, User, Attachment } from "@/lib/mockData";
+import { AuditProject, User, Attachment, ScheduleRow, Department } from "@/lib/mockData";
 import { RBAC } from "@/lib/auth";
 import RichEditor from "@/components/ui/rich-editor";
 import ActionToolbar from "@/components/ui/action-toolbar";
@@ -40,16 +45,19 @@ import {
   addAttachmentAction, 
   deleteAttachmentAction,
   deleteProjectAction,
-  sendEmailNotificationAction
+  sendEmailNotificationAction,
+  updateExecutionScheduleAction,
+  getExecutionSchedulesAction
 } from "@/app/actions";
 
 interface PlanningClientProps {
   initialProjects: AuditProject[];
   users: User[];
+  departments: Department[];
   currentUser: User;
 }
 
-export default function PlanningClient({ initialProjects, users, currentUser }: PlanningClientProps) {
+export default function PlanningClient({ initialProjects, users, departments, currentUser }: PlanningClientProps) {
   const [projects, setProjects] = useState<AuditProject[]>(initialProjects);
   const [selectedProjectId, setSelectedProjectId] = useState<string>(initialProjects[0]?.id || "");
   const [isCreating, setIsCreating] = useState<boolean>(false);
@@ -58,6 +66,22 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
   
   // Popup modal state
   const [isPopupOpen, setIsPopupOpen] = useState(false);
+  const [isQrModalOpen, setIsQrModalOpen] = useState(false);
+  const [copiedQrLink, setCopiedQrLink] = useState(false);
+
+  // Auto-open project if URL contains ?id=... (e.g. from scanning QR code)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      const urlId = params.get("id");
+      if (urlId) {
+        const found = projects.find(p => p.id === urlId);
+        if (found) {
+          openProjectEditor(found);
+        }
+      }
+    }
+  }, []);
 
   // Search filter
   const [searchQuery, setSearchQuery] = useState("");
@@ -77,6 +101,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
   const [editWorkflowStage, setEditWorkflowStage] = useState<any>("DRAFTING");
   const [editAuditorIds, setEditAuditorIds] = useState<string[]>([]);
   const [editDeptPicIds, setEditDeptPicIds] = useState<string[]>([]);
+  const [editDepartments, setEditDepartments] = useState<string[]>([]);
   const [editAttachments, setEditAttachments] = useState<Attachment[]>([]);
 
   // Selection Dropdown states
@@ -108,6 +133,81 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
   const [editApprovedByName, setEditApprovedByName] = useState("");
   const [editApprovedByTitle, setEditApprovedByTitle] = useState("");
   const [editApprovedDate, setEditApprovedDate] = useState("");
+
+  // Attendance Confirmations state
+  type AttendeeConfirmation = {
+    confirmedAt: string;
+    confirmedBy: string;
+  };
+
+  const parseAttendeeConfirmations = (raw?: string): Record<string, AttendeeConfirmation> => {
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  };
+
+  const pruneConfirmations = (attendeeNames: string[], confirmations: Record<string, AttendeeConfirmation>) => {
+    return attendeeNames.reduce<Record<string, AttendeeConfirmation>>((next, name) => {
+      if (confirmations[name]) next[name] = confirmations[name];
+      return next;
+    }, {});
+  };
+
+  const [attendeeConfirmations, setAttendeeConfirmations] = useState<Record<string, AttendeeConfirmation>>({});
+
+  const normalizeAttendeeName = (name: string) => name.trim().toLowerCase();
+  const canConfirmAttendee = (attendeeName: string) => currentUser.role === "ADMIN" || normalizeAttendeeName(attendeeName) === normalizeAttendeeName(currentUser.name);
+
+  const handleConfirmAttendee = async (attendeeName: string) => {
+    if (!selectedProject) return;
+
+    // Find linked meeting schedule if any
+    const linkedMeeting = selectedProject.executionSchedules?.find(e => e.language === "meeting");
+
+    if (!canConfirmAttendee(attendeeName)) {
+      showFeedback("Only the attendee or an Admin can confirm this attendance.");
+      return;
+    }
+
+    if (attendeeConfirmations[attendeeName]) {
+      showFeedback(`${attendeeName} is already confirmed.`);
+      return;
+    }
+
+    const deptPicArray = editDeptPicIds;
+    const nextConfirmations = pruneConfirmations(deptPicArray, {
+      ...attendeeConfirmations,
+      [attendeeName]: {
+        confirmedAt: new Date().toISOString(),
+        confirmedBy: currentUser.name
+      }
+    });
+
+    try {
+      if (linkedMeeting) {
+        await updateExecutionScheduleAction(linkedMeeting.id, {
+          attendeeConfirmations: JSON.stringify(nextConfirmations),
+          lastModifiedBy: currentUser.name
+        });
+      }
+
+      const updatedProj = await updateProjectAction(selectedProject.id, {
+        deptPicConfirmations: JSON.stringify(nextConfirmations)
+      });
+
+      if (updatedProj) {
+        setAttendeeConfirmations(nextConfirmations);
+        setProjects(projects.map(p => (p.id === selectedProject.id ? updatedProj : p)));
+      }
+    } catch (err: any) {
+      console.error(err);
+      showFeedback(`Confirmation failed: ${err.message || err.toString()}`);
+    }
+  };
 
   const formatDateString = (dateStr: string) => {
     if (!dateStr) return "………………. (TBD)";
@@ -169,7 +269,11 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     setNewLead(proj.leadAuditorId || "");
   };
 
-  const [saveFeedback, setSaveFeedback] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const showFeedback = (msg: string) => {
+    setFeedback(msg);
+    setTimeout(() => setFeedback(null), 3000);
+  };
 
   // Helper to check if any edits are unsaved compared to database state
   const checkIfDirty = () => {
@@ -289,6 +393,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     
     // Set custom SQLite integrations
     setEditWorkflowStage(proj.workflowStage || "DRAFTING");
+    setEditDepartments([]);
     setEditAuditorIds(proj.auditorNames ? proj.auditorNames.split(",").map(s => s.trim()).filter(Boolean) : []);
     setEditDeptPicIds(proj.deptPicIds ? proj.deptPicIds.split(",").filter(Boolean) : []);
     setEditAttachments(proj.attachments || []);
@@ -346,18 +451,22 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
     setEditApprovedByName(approvalsObj.approvedByName || "");
     setEditApprovedByTitle(approvalsObj.approvedByTitle || "");
     setEditApprovedDate(approvalsObj.approvedDate || "");
+
+    const linkedMeeting = proj.executionSchedules?.find(e => e.language === "meeting");
+    const initialConfirmations = parseAttendeeConfirmations(proj.deptPicConfirmations || linkedMeeting?.attendeeConfirmations);
+    setAttendeeConfirmations(initialConfirmations);
     
     // Close dropdown panels
     setIsAuditorDropdownOpen(false);
     setIsPicDropdownOpen(false);
-    setSaveFeedback(null);
+    setFeedback(null);
 
     setIsPopupOpen(true);
   };
 
   const handleSaveEdit = async () => {
     if (!selectedProject) return;
-    setSaveFeedback("Submitting scoping details...");
+    showFeedback("Submitting scoping details...");
     
     try {
       const updated = await updateProjectAction(selectedProject.id, {
@@ -370,6 +479,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
         leadAuditorId: editLead || null,
         workflowStage: editWorkflowStage,
         deptPicIds: editDeptPicIds.join(","),
+        departments: editDepartments.join(","),
         auditorIds: editAuditorIds,
         auditorNames: editAuditorIds.join(","),
         objectives: editObjectives,
@@ -402,17 +512,17 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
         setProjects(projects.map(p => (p.id === selectedProject.id ? updated : p)));
         setIsPopupOpen(false);
       } else {
-        setSaveFeedback("Submission failed: Project not found.");
+        showFeedback("Submission failed: Project not found.");
       }
     } catch (err: any) {
       console.error(err);
-      setSaveFeedback(`Submission Error: ${err.message || err.toString()}`);
+      showFeedback(`Submission Error: ${err.message || err.toString()}`);
     }
   };
 
   const handleSaveOnly = async () => {
     if (!selectedProject) return;
-    setSaveFeedback("Saving draft...");
+    showFeedback("Saving draft...");
     
     try {
       const updated = await updateProjectAction(selectedProject.id, {
@@ -425,6 +535,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
         leadAuditorId: editLead || null,
         workflowStage: editWorkflowStage,
         deptPicIds: editDeptPicIds.join(","),
+        departments: editDepartments.join(","),
         auditorIds: editAuditorIds,
         auditorNames: editAuditorIds.join(","),
         objectives: editObjectives,
@@ -455,14 +566,14 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
       if (updated) {
         setProjects(projects.map(p => (p.id === selectedProject.id ? updated : p)));
-        setSaveFeedback("Scoping plan updates saved successfully.");
-        setTimeout(() => setSaveFeedback(null), 4000);
+        showFeedback("Scoping plan updates saved successfully.");
+        setTimeout(() => setFeedback(null), 4000);
       } else {
-        setSaveFeedback("Save failed: Project not found.");
+        showFeedback("Save failed: Project not found.");
       }
     } catch (err: any) {
       console.error(err);
-      setSaveFeedback(`Save Error: ${err.message || err.toString()}`);
+      showFeedback(`Save Error: ${err.message || err.toString()}`);
     }
   };
 
@@ -482,7 +593,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
   const saveStatusChange = async (newStatus: any) => {
     if (!selectedProject) return;
     setEditStatus(newStatus);
-    setSaveFeedback(`Updating status to ${newStatus}...`);
+    showFeedback(`Updating status to ${newStatus}...`);
     try {
       const updated = await updateProjectAction(selectedProject.id, {
         name: editName,
@@ -494,6 +605,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
         leadAuditorId: editLead || null,
         workflowStage: editWorkflowStage,
         deptPicIds: editDeptPicIds.join(","),
+        departments: editDepartments.join(","),
         auditorIds: editAuditorIds,
         auditorNames: editAuditorIds.join(","),
         objectives: editObjectives,
@@ -524,14 +636,14 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
       if (updated) {
         setProjects(projects.map(p => (p.id === selectedProject.id ? updated : p)));
-        setSaveFeedback(`Status successfully updated to ${newStatus === "PLANNING" ? "Planning" : newStatus === "SUBMITTED_FOR_APPROVAL" ? "Submitted for Approval" : "Released"}.`);
-        setTimeout(() => setSaveFeedback(null), 3000);
+        showFeedback(`Status successfully updated to ${newStatus === "PLANNING" ? "Planning" : newStatus === "SUBMITTED_FOR_APPROVAL" ? "Submitted for Approval" : "Released"}.`);
+        setTimeout(() => setFeedback(null), 3000);
       } else {
-        setSaveFeedback("Status update failed: Project not found.");
+        showFeedback("Status update failed: Project not found.");
       }
     } catch (err: any) {
       console.error(err);
-      setSaveFeedback(`Status update Error: ${err.message || err.toString()}`);
+      showFeedback(`Status update Error: ${err.message || err.toString()}`);
     }
   };
 
@@ -595,7 +707,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
     const normalizedCode = newCode.trim().toUpperCase();
     if (projects.some((p) => p.code.trim().toUpperCase() === normalizedCode)) {
-      alert("That Project Code already exists. Please use a unique code for the copied Audit Plan.");
+      showFeedback("That Project Code already exists. Please use a unique code for the copied Audit Plan.");
       return;
     }
 
@@ -610,9 +722,39 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
       newLead || null
     );
 
-    setProjects([...projects, newProj]);
+    let finalProj = newProj;
+
+    if (isCopying && selectedProjectId) {
+      const originalProj = projects.find(p => p.id === selectedProjectId);
+      if (originalProj) {
+        const copyPayload = {
+          scope: originalProj.scope || "",
+          planningDetails: originalProj.planningDetails || "",
+          objectives: originalProj.objectives || "",
+          riskProcess: originalProj.riskProcess || "",
+          riskClass: originalProj.riskClass || "",
+          opEx: originalProj.opEx || "",
+          fieldwork: originalProj.fieldwork || "",
+          outcome: originalProj.outcome || "",
+          dataRequestType: originalProj.dataRequestType || "",
+          focusArea: originalProj.focusArea || "",
+          opExTimeline: originalProj.opExTimeline || "",
+          approvals: originalProj.approvals || "",
+          deptPicIds: originalProj.deptPicIds || "",
+          departments: originalProj.departments || "",
+          auditorNames: originalProj.auditorNames || "",
+          auditorIds: originalProj.auditorIds || []
+        };
+        const updated = await updateProjectAction(newProj.id, copyPayload);
+        if (updated) {
+          finalProj = updated;
+        }
+      }
+    }
+
+    setProjects([...projects, finalProj]);
     closeNewProjectModal();
-    openProjectEditor(newProj);
+    openProjectEditor(finalProj);
     
     // Clear form
     setNewName("");
@@ -703,7 +845,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
         setSelectedProjectId("");
       }
     } else {
-      alert("Failed to delete the Audit Plan.");
+      showFeedback("Failed to delete the Audit Plan.");
     }
   };
 
@@ -749,6 +891,15 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
   return (
     <div className="space-y-6">
+      
+      {/* Feedback notifier */}
+      {feedback && (
+        <div className="fixed bottom-8 right-8 z-[1100] flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c] no-print">
+          <span>{feedback}</span>
+        </div>
+      )}
+
+      {/* Search & Header Action */}
       <div className="space-y-6 no-print">
         {/* Title */}
       <div className="space-y-0.5">
@@ -758,7 +909,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
       {/* New Project Creator Modal */}
       {isCreating && (
         <div 
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm transition-opacity duration-300 animate-in fade-in"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/60 dark:bg-black/80 backdrop-blur-sm transition-opacity duration-300 animate-in fade-in"
           onClick={closeNewProjectModal}
         >
           <div 
@@ -1057,12 +1208,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                 </div>
               </div>
 
-              {/* Save feedback indicator */}
-              {saveFeedback && (
-                <div className="text-[10px] font-sans font-bold text-[#30b050] bg-green-500/10 dark:bg-green-500/5 border border-green-500/25 px-3 py-1.5 rounded animate-pulse shrink-0">
-                  {saveFeedback}
-                </div>
-              )}
+              {/* Save feedback indicator removed */}
 
               {/* Action buttons (Header Right) */}
               <div className="flex items-center gap-2.5 self-start md:self-auto shrink-0 no-print">
@@ -1164,16 +1310,72 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
 
               {/* Quick Summary Panel at the Top */}
               <div className="bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 rounded-lg p-6 space-y-4 shadow-sm">
-                <div className="flex justify-between items-center border-b border-slate-150 dark:border-slate-800 pb-2">
+                <div className="flex justify-between items-center border-b border-slate-150 dark:border-slate-800 pb-3">
                   <h3 className="text-xs font-roboto font-bold uppercase tracking-wider text-slate-800 dark:text-slate-200">
-                    Plan Members
+                    Audit Plan Members & Verification
                   </h3>
                   <span className="text-[10px] text-slate-400 dark:text-slate-500 italic">
                     Last edited by AI 2 hours ago
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                  {/* Column 1: QR Code Section */}
+                  <div className="flex flex-col items-center justify-center space-y-2 select-none border-b lg:border-b-0 lg:border-r border-slate-150 dark:border-slate-800 pb-4 lg:pb-0 lg:pr-6 no-print">
+                    <div 
+                      onClick={() => selectedProject?.id && setIsQrModalOpen(true)}
+                      className={`group flex flex-col items-center gap-1.5 cursor-pointer p-1.5 rounded-xl transition-all duration-200 hover:bg-slate-100 dark:hover:bg-slate-800/60 relative ${!selectedProject?.id ? 'cursor-not-allowed opacity-80' : ''}`}
+                      title={selectedProject?.id ? "Click to enlarge QR code" : "Save plan to generate QR code"}
+                    >
+                      {selectedProject?.id ? (
+                        <>
+                          <div className="relative w-[100px] h-[100px] bg-white border-2 border-[#0066cc]/40 dark:border-sky-500/50 group-hover:border-[#0066cc] dark:group-hover:border-sky-400 rounded-lg p-1 flex items-center justify-center shadow-xs transition-all duration-200 group-hover:shadow-md group-hover:scale-105">
+                            <img 
+                              src={`https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(
+                                typeof window !== "undefined" 
+                                  ? `${window.location.origin}/planning?id=${selectedProject.id}` 
+                                  : `/planning?id=${selectedProject.id}`
+                              )}`} 
+                              alt="QR Code" 
+                              className="w-[88px] h-[88px] object-contain rounded"
+                            />
+                            <div className="absolute top-[38px] left-[38px] w-5 h-5 bg-white rounded-sm p-0.5 shadow border border-slate-200 flex items-center justify-center pointer-events-none">
+                              <img 
+                                src="/hanuman-logo.png" 
+                                alt="Logo" 
+                                className="w-full h-full object-contain"
+                              />
+                            </div>
+                            
+                            {/* Hover Overlay Icon */}
+                            <div className="absolute inset-0 bg-slate-900/30 opacity-0 group-hover:opacity-100 transition-opacity duration-200 rounded-lg flex items-center justify-center text-white backdrop-blur-[1px]">
+                              <Maximize2 className="w-4 h-4 drop-shadow-md text-white" />
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-1 px-2 py-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-2xs group-hover:border-[#0066cc] transition-colors">
+                            <span className="text-[10px] font-roboto font-bold uppercase tracking-widest text-slate-700 dark:text-slate-200 font-mono">
+                              {(() => {
+                                const clean = selectedProject.id.replace(/-/g, "").toUpperCase();
+                                return `${clean.slice(0, 5)}-${clean.slice(5, 9)}`;
+                              })()}
+                            </span>
+                            <Maximize2 className="w-2.5 h-2.5 text-slate-400 group-hover:text-[#0066cc] transition-colors" />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="relative w-[100px] h-[100px] bg-slate-50 dark:bg-slate-850 border border-slate-200 dark:border-slate-800 rounded-lg p-1.5 flex flex-col items-center justify-center text-center text-slate-400 gap-1">
+                            <BookOpen className="w-4 h-4 text-slate-350" />
+                            <span className="text-[8px] font-bold uppercase tracking-wider leading-tight">Save plan to link QR</span>
+                          </div>
+                          <span className="text-[10px] font-roboto font-bold uppercase tracking-widest text-slate-400 font-mono">
+                            PENDING-SAVE
+                          </span>
+                        </>
+                      )}
+                    </div>
+                  </div>
                   {/* Column 2: Lead & Auditors */}
                   <div className="space-y-4">
                     <div className="flex flex-col gap-1.5">
@@ -1216,7 +1418,10 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                       <label className="text-xs font-sans font-bold uppercase text-slate-500">Department PIC</label>
                       <MultiSelect
                         selectedValues={editDeptPicIds}
-                        onChange={(values) => setEditDeptPicIds(values)}
+                        onChange={(values) => {
+                          setEditDeptPicIds(values);
+                          setAttendeeConfirmations(prev => pruneConfirmations(values, prev));
+                        }}
                         disabled={isReadOnly}
                         options={users.map(u => ({
                           value: u.name,
@@ -1226,8 +1431,155 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                         placeholder="Select PICs..."
                       />
                     </div>
+
+                    <div className="flex flex-col gap-1.5 mt-4">
+                      <label className="text-xs font-sans font-bold uppercase text-slate-500">Department(s)</label>
+                      <MultiSelect
+                        selectedValues={editDepartments}
+                        onChange={(values) => setEditDepartments(values)}
+                        disabled={isReadOnly}
+                        options={departments.map(d => ({
+                          value: d.name,
+                          label: d.name
+                        }))}
+                        placeholder="Select Department(s)..."
+                      />
+                    </div>
+
+                    {editDeptPicIds.length > 0 && (
+                      <div className="mt-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 p-3 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Attendance Confirmation</span>
+                          <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
+                            {editDeptPicIds.filter(name => attendeeConfirmations[name]).length}/{editDeptPicIds.length} confirmed
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-1 gap-2">
+                          {editDeptPicIds.map((attendeeName) => {
+                            const confirmation = attendeeConfirmations[attendeeName];
+                            const canConfirm = canConfirmAttendee(attendeeName);
+                            const confirmedAt = confirmation?.confirmedAt
+                              ? new Date(confirmation.confirmedAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                              : "";
+
+                            return (
+                              <div key={attendeeName} className="flex items-center justify-between gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2">
+                                <div className="min-w-0">
+                                  <div className="truncate text-xs font-bold text-slate-800 dark:text-slate-100">{attendeeName}</div>
+                                  <div className="text-[10px] text-slate-500 dark:text-slate-400">
+                                    {confirmation ? `Confirmed by ${confirmation.confirmedBy} on ${confirmedAt}` : "Pending confirmation"}
+                                  </div>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleConfirmAttendee(attendeeName)}
+                                  disabled={Boolean(confirmation) || !canConfirm}
+                                  className={`shrink-0 inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[11px] font-bold transition-colors ${confirmation
+                                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
+                                    : canConfirm
+                                      ? "bg-[#05375c] text-white hover:bg-[#074776] cursor-pointer"
+                                      : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 cursor-not-allowed"
+                                  }`}
+                                >
+                                  {confirmation && <CheckCircle2 className="w-3.5 h-3.5" />}
+                                  {confirmation ? "Confirmed" : canConfirm ? "Confirm" : "Waiting"}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
+
+                {/* Audit Finding Reports Section */}
+                {selectedProject && (() => {
+                  const dbFindings = selectedProject.findings || [];
+                  const scheduleFindings = selectedProject.executionSchedules?.filter(e => e.language === "finding") || [];
+                  if (dbFindings.length === 0 && scheduleFindings.length === 0) return null;
+                  
+                  return (
+                    <div className="pt-4 border-t border-slate-150 dark:border-slate-800 space-y-2.5">
+                      <h4 className="text-xs font-sans font-bold uppercase tracking-wider text-slate-850 dark:text-slate-205">
+                        Audit Finding Reports
+                      </h4>
+                      <div className="overflow-x-auto border border-slate-200 dark:border-slate-800 rounded-md bg-white dark:bg-slate-900 shadow-sm">
+                        <table className="w-full text-left text-xs border-collapse">
+                          <thead className="bg-slate-50 dark:bg-slate-800/60 border-b border-slate-200 dark:border-slate-800 text-slate-500 font-sans font-bold uppercase text-[10px] tracking-wider">
+                            <tr>
+                              <th className="px-3.5 py-2.5">Audit Findings Name</th>
+                              <th className="px-3 py-2.5 text-center text-amber-600 dark:text-amber-400">Pending</th>
+                              <th className="px-3 py-2.5 text-center text-emerald-600 dark:text-emerald-400">Completed</th>
+                              <th className="px-3 py-2.5 text-center text-slate-500">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80 font-sans">
+                            {dbFindings.map(f => {
+                              const isCompleted = f.status === "CLOSED";
+                              return (
+                                <tr key={f.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30">
+                                  <td className="px-3.5 py-2">
+                                    <a 
+                                      href={`/findings?id=${f.id}`} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer" 
+                                      className="text-[#0066cc] hover:underline font-bold"
+                                    >
+                                      {f.title}
+                                    </a>
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-bold text-amber-600 dark:text-amber-400">
+                                    {isCompleted ? 0 : 1}
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-bold text-emerald-600 dark:text-emerald-400">
+                                    {isCompleted ? 1 : 0}
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-bold text-slate-600 dark:text-slate-300">
+                                    1
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {scheduleFindings.map(sf => {
+                              let rows: ScheduleRow[] = [];
+                              try {
+                                if (sf.scheduleRows) rows = JSON.parse(sf.scheduleRows);
+                              } catch {}
+                              const total = rows.length;
+                              const completed = rows.filter(r => !!r.correctiveFinalUser).length;
+                              const pending = total - completed;
+
+                              return (
+                                <tr key={sf.id} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/30">
+                                  <td className="px-3.5 py-2">
+                                    <a 
+                                      href={`/findings?id=${sf.id}`} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer" 
+                                      className="text-[#0066cc] hover:underline font-bold"
+                                    >
+                                      FD-{sf.visitNumber} ({sf.departments})
+                                    </a>
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-bold text-amber-600 dark:text-amber-400">
+                                    {pending}
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-bold text-emerald-600 dark:text-emerald-400">
+                                    {completed}
+                                  </td>
+                                  <td className="px-3 py-2 text-center font-bold text-slate-600 dark:text-slate-300">
+                                    {total}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 {/* Linked Items Section */}
                 {selectedProject && (
@@ -1250,7 +1602,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                               rel="noopener noreferrer" 
                               className="text-[#0066cc] hover:underline font-bold"
                             >
-                              OM-{m.visitNumber} ({m.organization})
+                              OM-{m.visitNumber} ({m.departments})
                             </a>
                           </div>
                         ));
@@ -1260,60 +1612,37 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                       {(() => {
                         const schedules = selectedProject.executionSchedules?.filter(e => e.language !== "meeting" && e.language !== "finding") || [];
                         if (schedules.length === 0) return null;
-                        return schedules.map(s => (
-                          <div key={s.id} className="flex items-center gap-1.5">
-                            <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0" />
-                            <span>Execution schedule: </span>
-                            <a 
-                              href={`/schedule?id=${s.id}`} 
-                              target="_blank" 
-                              rel="noopener noreferrer" 
-                              className="text-[#0066cc] hover:underline font-bold"
-                            >
-                              SCH-{s.visitNumber} ({s.organization})
-                            </a>
-                          </div>
-                        ));
-                      })()}
+                        return schedules.map(s => {
+                          let rows: ScheduleRow[] = [];
+                          try {
+                            if (s.scheduleRows) rows = JSON.parse(s.scheduleRows);
+                          } catch {}
+                          const total = rows.length;
+                          const completed = rows.filter(r => !!r.correctiveFinalUser).length;
+                          const pending = total - completed;
 
-                      {/* Findings */}
-                      {(() => {
-                        const dbFindings = selectedProject.findings || [];
-                        const scheduleFindings = selectedProject.executionSchedules?.filter(e => e.language === "finding") || [];
-                        if (dbFindings.length === 0 && scheduleFindings.length === 0) return null;
-                        
-                        return (
-                          <>
-                            {dbFindings.map(f => (
-                              <div key={f.id} className="flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full shrink-0" />
-                                <span>Audit Findings: </span>
-                                <a 
-                                  href={`/findings?id=${f.id}`} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="text-[#0066cc] hover:underline font-bold"
-                                >
-                                  {f.title} ({f.status})
-                                </a>
-                              </div>
-                            ))}
-                            {scheduleFindings.map(sf => (
-                              <div key={sf.id} className="flex items-center gap-1.5">
-                                <span className="w-1.5 h-1.5 bg-amber-500 rounded-full shrink-0" />
-                                <span>Audit Findings: </span>
-                                <a 
-                                  href={`/findings?id=${sf.id}`} 
-                                  target="_blank" 
-                                  rel="noopener noreferrer" 
-                                  className="text-[#0066cc] hover:underline font-bold"
-                                >
-                                  FD-{sf.visitNumber} ({sf.organization})
-                                </a>
-                              </div>
-                            ))}
-                          </>
-                        );
+                          return (
+                            <div key={s.id} className="flex flex-wrap items-center gap-1.5 py-0.5">
+                              <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full shrink-0" />
+                              <span>Execution schedule: </span>
+                              <a 
+                                href={`/schedule?id=${s.id}`} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="text-[#0066cc] hover:underline font-bold"
+                              >
+                                SCH-{s.visitNumber} ({s.departments})
+                              </a>
+                              <span className="ml-1 inline-flex items-center gap-1.5 text-[10px] font-sans font-bold bg-slate-100 dark:bg-slate-800 px-2 py-0.5 rounded text-slate-600 dark:text-slate-300">
+                                <span className="text-amber-600 dark:text-amber-400 font-bold">Pending: {pending}</span>
+                                <span>•</span>
+                                <span className="text-emerald-600 dark:text-emerald-400 font-bold">Completed: {completed}</span>
+                                <span>•</span>
+                                <span className="text-slate-500">Total: {total}</span>
+                              </span>
+                            </div>
+                          );
+                        });
                       })()}
 
                       {/* Fallback if nothing is linked */}
@@ -1352,7 +1681,7 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   </h3>
                   {/* <button 
                     type="button"
-                    onClick={() => alert("Standard mapping framework imported successfully.")}
+                    onClick={() => showFeedback("Standard mapping framework imported successfully.")}
                     className="flex items-center gap-1 px-2.5 py-1 border border-slate-200 dark:border-slate-800 text-[10px] font-bold rounded text-slate-600 dark:text-slate-300 bg-slate-50 hover:bg-slate-100 cursor-pointer"
                   >
                     <Import className="w-3.5 h-3.5" /> Import Framework
@@ -1743,13 +2072,13 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
                   Discard Draft
                 </button>
                 <button 
-                  onClick={() => alert("Scoping revision history fetched.")}
+                  onClick={() => showFeedback("Scoping revision history fetched.")}
                   className="hover:text-slate-700 dark:hover:text-slate-250 transition-colors cursor-pointer flex items-center gap-0.5"
                 >
                   <History className="w-3 h-3" /> Audit History
                 </button>
                 <button 
-                  onClick={() => alert("Redirecting to Compliance Policy Catalog.")}
+                  onClick={() => showFeedback("Redirecting to Compliance Policy Catalog.")}
                   className="hover:text-slate-700 dark:hover:text-slate-250 transition-colors cursor-pointer flex items-center gap-0.5"
                 >
                   Policy Link <ArrowUpRight className="w-2.5 h-2.5" />
@@ -1757,6 +2086,133 @@ export default function PlanningClient({ initialProjects, users, currentUser }: 
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+
+      {/* Enlarged QR Code Modal */}
+      {isQrModalOpen && selectedProject && (
+        <div 
+          className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-[70] p-4 animate-fade-in no-print"
+          onClick={() => setIsQrModalOpen(false)}
+        >
+          <div 
+            className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl max-w-sm w-full p-6 text-center space-y-5 relative overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Background subtle glow decoration */}
+            <div className="absolute -top-16 -right-16 w-32 h-32 bg-sky-500/10 rounded-full blur-2xl pointer-events-none" />
+            <div className="absolute -bottom-16 -left-16 w-32 h-32 bg-[#0066cc]/10 rounded-full blur-2xl pointer-events-none" />
+
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-slate-100 dark:border-slate-800 pb-3">
+              <div className="flex items-center gap-2 text-left">
+                <div className="w-9 h-9 rounded-lg bg-sky-50 dark:bg-sky-950/60 border border-sky-100 dark:border-sky-900/50 flex items-center justify-center text-sky-600 dark:text-sky-400 shrink-0">
+                  <QrCode className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">
+                    Audit Plan QR Code
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-roboto truncate max-w-[200px]" title={selectedProject.name}>
+                    {selectedProject.code} &bull; {selectedProject.name}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsQrModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+                title="Close QR modal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* QR Code Container */}
+            <div className="flex flex-col items-center justify-center space-y-3 py-1">
+              <div className="relative p-3 bg-white border-2 border-[#0066cc]/40 rounded-xl shadow-xl inline-block group">
+                <img 
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
+                    typeof window !== "undefined" 
+                      ? `${window.location.origin}/planning?id=${selectedProject.id}` 
+                      : `/planning?id=${selectedProject.id}`
+                  )}`} 
+                  alt="Audit Plan Enlarged QR Code" 
+                  className="w-[210px] h-[210px] object-contain rounded"
+                />
+                <div className="absolute top-[97px] left-[97px] w-11 h-11 bg-white rounded-md p-1 shadow-md border border-slate-200 flex items-center justify-center pointer-events-none">
+                  <img 
+                    src="/hanuman-logo.png" 
+                    alt="Logo" 
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              </div>
+
+              {/* Project Verification ID Badge */}
+              <div className="flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1 rounded-full text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
+                <span className="text-slate-400 font-sans font-normal text-[10px] uppercase">Plan ID:</span>
+                <span>
+                  {(() => {
+                    const clean = selectedProject.id.replace(/-/g, "").toUpperCase();
+                    return `${clean.slice(0, 5)}-${clean.slice(5, 9)}`;
+                  })()}
+                </span>
+              </div>
+            </div>
+
+            {/* Description / Instructions */}
+            <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed px-2">
+              Scan this QR code using a smartphone or tablet camera to instantly view or verify this Audit Plan.
+            </p>
+
+            {/* Action Buttons */}
+            <div className="flex items-center gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  const link = `${typeof window !== "undefined" ? window.location.origin : ""}/planning?id=${selectedProject.id}`;
+                  navigator.clipboard.writeText(link);
+                  setCopiedQrLink(true);
+                  setTimeout(() => setCopiedQrLink(false), 2000);
+                }}
+                className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border transition-all cursor-pointer ${
+                  copiedQrLink 
+                    ? "bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/30" 
+                    : "bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-slate-700"
+                }`}
+              >
+                {copiedQrLink ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                {copiedQrLink ? "Copied!" : "Copy Link"}
+              </button>
+
+              <button
+                type="button"
+                onClick={async () => {
+                  const url = `https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent(
+                    typeof window !== "undefined" ? `${window.location.origin}/planning?id=${selectedProject.id}` : `/planning?id=${selectedProject.id}`
+                  )}`;
+                  try {
+                    const res = await fetch(url);
+                    const blob = await res.blob();
+                    const blobUrl = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = blobUrl;
+                    a.download = `QR-${selectedProject.code}.png`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(blobUrl);
+                  } catch (err) {
+                    window.open(url, "_blank");
+                  }
+                }}
+                className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg bg-[#0066cc] hover:bg-[#0052a3] text-white transition-colors cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Download QR
+              </button>
+            </div>
           </div>
         </div>
       )}

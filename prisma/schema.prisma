@@ -50,6 +50,7 @@ model AuditProject {
   status          String // "PLANNING", "IN_PROGRESS", "REPORTING", "ARCHIVED"
   workflowStage   String   @default("DRAFTING") // "DRAFTING", "REVIEW", "PENDING_PIC", "APPROVED"
   deptPicIds      String   @default("") // Comma-separated list of User IDs representing department PICs
+  departments     String   @default("") // Comma-separated list of Department IDs/Names
   scope           String
   planningDetails String
   startDate       DateTime
@@ -134,7 +135,7 @@ model ExecutionSchedule {
   id                  String       @id @default(uuid())
   projectId           String
   project             AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  organization        String
+  departments         String       @default("")
   address             String
   visitNumber         String       @default("01")
   actualVisitDate     String
@@ -149,6 +150,7 @@ model ExecutionSchedule {
   objectives          String       @default("")
   scope               String       @default("")
   scheduleRows        String // JSON serialized rows: [{date, time, activity, conductBy, pIncharge}]
+  attachments         String       @default("[]") // JSON serialized array of attachments
   ownerName           String       @default("Sarah Jenkins")
   lastModifiedBy      String       @default("Sarah Jenkins")
   createdAt           DateTime     @default(now())

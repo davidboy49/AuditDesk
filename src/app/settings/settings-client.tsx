@@ -129,7 +129,7 @@ export default function SettingsClient({
 
   const templateVariables: Record<string, string[]> = {
     planning: ["recipientName", "projectName", "projectCode", "status", "details"],
-    meetings: ["recipientName", "projectName", "projectCode", "organization", "visitDate", "ownerName"],
+    meetings: ["recipientName", "projectName", "projectCode", "departments", "visitDate", "ownerName"],
     schedule: ["recipientName", "projectName", "projectCode", "auditPeriod", "leadExecution", "standards"],
     findings: ["recipientName", "projectName", "projectCode", "findingTitle", "severity", "recommendation"]
   };
@@ -137,15 +137,10 @@ export default function SettingsClient({
   return (
     <div className="space-y-6">
       
-      {/* Feedback Alerts */}
+      {/* Feedback Toast */}
       {feedback && (
-        <div className={`fixed top-4 right-4 text-white px-4 py-3 rounded-lg shadow-2xl z-[60] flex items-center gap-2.5 animate-bounce max-w-md border ${
-          feedback.type === "success" 
-            ? "bg-emerald-600 border-emerald-500" 
-            : "bg-red-600 border-red-500"
-        }`}>
-          {feedback.type === "success" ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
-          <span className="text-xs font-semibold font-sans">{feedback.message}</span>
+        <div className="fixed bottom-8 right-8 z-[1100] flex items-center gap-2 bg-[#05375c] text-white px-4 py-3 rounded-md shadow-md text-xs font-sans font-semibold animate-slide-up border border-[#05375c] no-print">
+          <span>{feedback.message}</span>
         </div>
       )}
 
@@ -392,7 +387,7 @@ export default function SettingsClient({
                       {variable === "projectCode" && "The standard audit plan registration identifier (e.g. AUD-2026-001)."}
                       {variable === "status" && "The current workspace status of the plan or finding record."}
                       {variable === "details" && "Context details, remarks, or revision feedback."}
-                      {variable === "organization" && "The auditee's corporate/department governance name."}
+                      {variable === "departments" && "The auditee's corporate/department governance name."}
                       {variable === "visitDate" && "Scheduled execution visit dates."}
                       {variable === "ownerName" && "The creator or chairperson of the meeting."}
                       {variable === "auditPeriod" && "Dates representing the scoping timeframe."}
