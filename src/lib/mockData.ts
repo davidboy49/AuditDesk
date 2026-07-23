@@ -131,6 +131,8 @@ export interface ExecutionSchedule {
   attachments?: string; // JSON
   ownerName?: string;
   lastModifiedBy?: string;
+  qrToken?: string;
+  departmentConsents?: string;
   createdAt?: string;
   updatedAt?: string;
 }

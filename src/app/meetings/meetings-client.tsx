@@ -19,7 +19,8 @@ import {
   Lock,
   Unlock,
   BadgeCheck,
-  CheckCircle2
+  CheckCircle2,
+  QrCode
 } from "lucide-react";
 import { 
   User, 
@@ -38,6 +39,7 @@ import {
 import ActionToolbar from "@/components/ui/action-toolbar";
 import RichEditor from "@/components/ui/rich-editor";
 import MultiSelect from "@/components/ui/multi-select";
+import QRCodeModal from "@/components/ui/qr-code-modal";
 
 // Helper to format date strings for display
 const formatDateString = (dateStr: string) => {
@@ -173,6 +175,15 @@ export default function MeetingsClient({
 
   // Feedback notifier
   const [feedback, setFeedback] = useState<string | null>(null);
+
+  // QR Code Modal State
+  const [qrModalOpen, setQrModalOpen] = useState<boolean>(false);
+  const [qrModalData, setQrModalData] = useState<{
+    qrToken: string;
+    projectTitle: string;
+    projectCode: string;
+    departments: string;
+  } | null>(null);
 
   // Custom dialog alert states
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -648,12 +659,13 @@ export default function MeetingsClient({
                   <th className="px-6 py-4">Meeting Date</th>
                   <th className="px-6 py-4">Facilitator</th>
                   <th className="px-6 py-4">Status</th>
+                  <th className="px-6 py-4 text-center">QR Code</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                 {filteredSchedules.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-slate-400 italic">
+                    <td colSpan={7} className="px-6 py-8 text-center text-slate-400 italic">
                       No meetings matched filters or none have been created. Click "+" above to create a meeting alignment record.
                     </td>
                   </tr>
@@ -692,6 +704,25 @@ export default function MeetingsClient({
                         <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold ${s.status === "RELEASED" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"}`}>
                           {s.status === "RELEASED" ? "Released" : "Draft"}
                         </span>
+                      </td>
+                      <td className="px-6 py-4.5 text-center">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setQrModalData({
+                              qrToken: s.qrToken || s.id,
+                              projectTitle: s.projectName || "Audit Open Meeting",
+                              projectCode: s.projectCode || "AP-2026",
+                              departments: s.departments || "All Departments"
+                            });
+                            setQrModalOpen(true);
+                          }}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[11px] font-medium transition-colors"
+                          title="View Universal QR Code for Open Meeting Scope Consent"
+                        >
+                          <QrCode className="w-3.5 h-3.5 text-indigo-500" /> QR
+                        </button>
                       </td>
                     </tr>
                   ))
@@ -748,6 +779,22 @@ export default function MeetingsClient({
 
               {/* Actions Header Bar */}
               <div className="flex items-center gap-2.5 shrink-0 no-print">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const proj = projects.find(p => p.id === selectedProjectId);
+                    setQrModalData({
+                      qrToken: activeSchedule?.qrToken || activeSchedule?.id || selectedProjectId || "AP-2026",
+                      projectTitle: proj?.name || "Audit Open Meeting Alignment",
+                      projectCode: proj?.code || "AP-2026",
+                      departments: departmentsStr || proj?.departments || "All Departments"
+                    });
+                    setQrModalOpen(true);
+                  }}
+                  className="flex items-center gap-1.5 px-3 py-2 border border-indigo-500/40 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded cursor-pointer transition-colors shadow-sm"
+                >
+                  <QrCode className="w-4 h-4 text-indigo-500" /> Universal QR Code
+                </button>
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -1091,6 +1138,18 @@ export default function MeetingsClient({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Universal QR Code Modal */}
+      {qrModalData && (
+        <QRCodeModal
+          isOpen={qrModalOpen}
+          onClose={() => setQrModalOpen(false)}
+          qrToken={qrModalData.qrToken}
+          projectTitle={qrModalData.projectTitle}
+          projectCode={qrModalData.projectCode}
+          departments={qrModalData.departments}
+        />
       )}
 
     </div>

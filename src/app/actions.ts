@@ -600,3 +600,28 @@ export async function sendEmailNotificationAction(
     return { success: false, simulatedAlerts: [] };
   }
 }
+
+export async function getOpenMeetingByQrAction(qrToken: string): Promise<{ schedule: any; currentUser: any; departments: any[] }> {
+  const currentUser = await getCurrentUserServer();
+  const schedule = await dbService.getExecutionScheduleByQrToken(qrToken);
+  const departments = await dbService.getDepartments();
+  return { schedule, currentUser, departments };
+}
+
+export async function recordDepartmentConsentAction(scheduleId: string, departmentId: string, status: "ACCEPTED" | "REVISION_REQUESTED", comments?: string): Promise<any> {
+  const currentUser = await getCurrentUserServer();
+  const consentObj = {
+    status,
+    acceptedByUserId: currentUser.id,
+    acceptedByUserName: currentUser.name,
+    acceptedByUserEmail: currentUser.email,
+    timestamp: new Date().toISOString(),
+    comments: comments || ""
+  };
+  const updatedSchedule = await dbService.updateDepartmentConsent(scheduleId, departmentId, consentObj);
+  await logActivity("RECORD_DEPARTMENT_CONSENT", `User ${currentUser.name} (${departmentId}) recorded consent status: ${status} for schedule ${scheduleId}`);
+  revalidatePath("/meetings");
+  revalidatePath(`/meetings/scan/${updatedSchedule.qrToken || scheduleId}`);
+  return updatedSchedule;
+}
+

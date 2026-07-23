@@ -395,6 +395,15 @@ export const dbService = {
         executionSchedules: true
       }
     });
+
+    if (updates.status === "RELEASED") {
+      try {
+        await this.ensureExecutionScheduleForProject(id);
+      } catch (err) {
+        console.error("Failed to auto-create execution schedule on release:", err);
+      }
+    }
+
     return {
       id: p.id,
       name: p.name,
@@ -624,6 +633,8 @@ export const dbService = {
       attachments: s.attachments,
       ownerName: s.ownerName,
       lastModifiedBy: s.lastModifiedBy,
+      qrToken: (s as any).qrToken ?? s.id,
+      departmentConsents: (s as any).departmentConsents ?? "{}",
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString()
     }));
@@ -648,6 +659,8 @@ export const dbService = {
     attachments?: string;
     ownerName?: string;
     lastModifiedBy?: string;
+    qrToken?: string;
+    departmentConsents?: string;
   }): Promise<any> {
     const { attendeeConfirmations, ...createData } = data;
     const s = await prisma.executionSchedule.create({
@@ -680,6 +693,8 @@ export const dbService = {
       attachments: s.attachments,
       ownerName: s.ownerName,
       lastModifiedBy: s.lastModifiedBy,
+      qrToken: (s as any).qrToken ?? s.id,
+      departmentConsents: (s as any).departmentConsents ?? "{}",
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString()
     };
@@ -714,8 +729,160 @@ export const dbService = {
       attachments: s.attachments,
       ownerName: s.ownerName,
       lastModifiedBy: s.lastModifiedBy,
+      qrToken: (s as any).qrToken ?? s.id,
+      departmentConsents: (s as any).departmentConsents ?? "{}",
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString()
+    };
+  },
+  async ensureExecutionScheduleForProject(projectId: string): Promise<any> {
+    const project = await prisma.auditProject.findUnique({
+      where: { id: projectId },
+      include: { executionSchedules: true }
+    });
+    if (!project) return null;
+
+    if (project.executionSchedules && project.executionSchedules.length > 0) {
+      const existing = project.executionSchedules[0];
+      return this.getExecutionSchedule(existing.id);
+    }
+
+    const depts = project.departments || "IT, Finance, Operations";
+    const deptList = depts.split(",").map(s => s.trim()).filter(Boolean);
+    
+    const startDateStr = project.startDate ? project.startDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+
+    const generatedRows = deptList.flatMap((d, i) => [
+      {
+        day: `Day 1`,
+        date: startDateStr,
+        time: `0${9 + (i % 3)}:00 AM - 10:00 AM`,
+        activity: `Opening Meeting & Audit Scope Alignment for ${d}`,
+        conductBy: project.auditorNames || "Audit Team",
+        pIncharge: d
+      },
+      {
+        day: `Day 1`,
+        date: startDateStr,
+        time: `10:00 AM - 11:00 AM`,
+        activity: `Q&A and Scope Consent Confirmation for ${d}`,
+        conductBy: project.auditorNames || "Audit Team",
+        pIncharge: d
+      }
+    ]);
+
+    const newSchedule = await prisma.executionSchedule.create({
+      data: {
+        projectId: project.id,
+        departments: depts,
+        address: "HQ Conference Room / Virtual Meeting",
+        visitNumber: "01",
+        actualVisitDate: startDateStr,
+        auditPeriod: `${project.startDate ? new Date(project.startDate).toLocaleDateString("en-GB") : "Start"} - ${project.endDate ? new Date(project.endDate).toLocaleDateString("en-GB") : "End"}`,
+        leadExecution: project.auditorNames || "Lead Auditor",
+        teamMembers: project.auditorNames || "",
+        additionalAttendees: project.deptPicIds || "",
+        attendeeConfirmations: "{}",
+        standards: "Work Procedure, Work Instruction & Policy",
+        language: "English",
+        status: "RELEASED",
+        objectives: project.objectives || `Evaluate operational compliance, governance controls, and risk management for ${depts}.`,
+        scope: project.scope || `Full scope audit covering departmental procedures, documentation, and key controls.`,
+        scheduleRows: JSON.stringify(generatedRows),
+        attachments: "[]",
+        ownerName: "Audit Management System",
+        lastModifiedBy: "Auto-Generated on Release",
+        qrToken: project.code || project.id,
+        departmentConsents: "{}"
+      },
+      include: { project: true }
+    });
+
+    return this.getExecutionSchedule(newSchedule.id);
+  },
+  async getExecutionScheduleByQrToken(qrToken: string): Promise<any> {
+    let s = await prisma.executionSchedule.findFirst({
+      where: {
+        OR: [
+          { qrToken: qrToken },
+          { id: qrToken },
+          { projectId: qrToken },
+          { project: { code: qrToken } }
+        ]
+      },
+      include: { project: true }
+    });
+
+    if (!s) {
+      const matchingProject = await prisma.auditProject.findFirst({
+        where: {
+          OR: [
+            { code: qrToken },
+            { id: qrToken }
+          ]
+        }
+      });
+      if (matchingProject) {
+        return this.ensureExecutionScheduleForProject(matchingProject.id);
+      }
+      return null;
+    }
+
+    const confirmationMap = await getScheduleAttendeeConfirmations([s.id]);
+    return {
+      id: s.id,
+      projectId: s.projectId,
+      projectName: s.project?.name,
+      projectCode: s.project?.code,
+      departments: s.departments,
+      address: s.address,
+      visitNumber: s.visitNumber,
+      actualVisitDate: s.actualVisitDate,
+      auditPeriod: s.auditPeriod,
+      leadExecution: s.leadExecution,
+      teamMembers: s.teamMembers,
+      additionalAttendees: s.additionalAttendees,
+      attendeeConfirmations: confirmationMap[s.id] ?? s.attendeeConfirmations ?? "{}",
+      standards: s.standards,
+      language: s.language,
+      status: s.status,
+      objectives: s.objectives,
+      scope: s.scope,
+      scheduleRows: s.scheduleRows,
+      attachments: s.attachments,
+      ownerName: s.ownerName,
+      lastModifiedBy: s.lastModifiedBy,
+      qrToken: (s as any).qrToken ?? s.id,
+      departmentConsents: (s as any).departmentConsents ?? "{}",
+      createdAt: s.createdAt.toISOString(),
+      updatedAt: s.updatedAt.toISOString()
+    };
+  },
+  async updateDepartmentConsent(scheduleId: string, departmentId: string, consentObj: { status: string; acceptedByUserId: string; acceptedByUserName: string; acceptedByUserEmail: string; timestamp: string; comments?: string }): Promise<any> {
+    const s = await prisma.executionSchedule.findUnique({ where: { id: scheduleId } });
+    if (!s) throw new Error("Execution Schedule not found");
+    
+    let consents: Record<string, any> = {};
+    try {
+      consents = JSON.parse((s as any).departmentConsents || "{}");
+    } catch {
+      consents = {};
+    }
+    
+    consents[departmentId] = consentObj;
+    
+    const updated = await prisma.executionSchedule.update({
+      where: { id: scheduleId },
+      data: {
+        departmentConsents: JSON.stringify(consents)
+      },
+      include: { project: true }
+    });
+    
+    return {
+      ...updated,
+      projectName: updated.project?.name,
+      projectCode: updated.project?.code
     };
   },
   async updateExecutionSchedule(id: string, data: Partial<{

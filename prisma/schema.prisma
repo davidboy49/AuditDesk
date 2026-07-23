@@ -153,6 +153,8 @@ model ExecutionSchedule {
   attachments         String       @default("[]") // JSON serialized array of attachments
   ownerName           String       @default("Sarah Jenkins")
   lastModifiedBy      String       @default("Sarah Jenkins")
+  qrToken             String       @default(uuid())
+  departmentConsents  String       @default("{}") // JSON serialized: { [deptId]: { status, acceptedByUserId, acceptedByUserName, acceptedByUserEmail, timestamp, comments } }
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 }
