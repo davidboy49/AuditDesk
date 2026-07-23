@@ -1,4 +1,5 @@
 import prisma from "./db";
+import { generateDocumentCode } from "./codeGenerator";
 import { User, Department, UserGroup, UserRole, AuditProject, Finding, Attachment } from "./mockData";
 const getScheduleAttendeeConfirmations = async (ids: string[]) => {
   if (ids.length === 0) return {} as Record<string, string>;
@@ -242,7 +243,13 @@ export const dbService = {
     }));
   },
   async createProject(name: string, code: string, status: any, scope: string, planningDetails: string, startDate: string, endDate: string, leadAuditorId: string | null): Promise<AuditProject> {
-    const normalizedCode = code.trim().toUpperCase();
+    let normalizedCode = (code || "").trim().toUpperCase();
+    
+    if (!normalizedCode || normalizedCode === "AUTO") {
+      const startYear = startDate ? new Date(startDate).getFullYear() : new Date().getFullYear();
+      normalizedCode = await generateDocumentCode("AP", startYear);
+    }
+
     const existing = await prisma.auditProject.findFirst({
       where: { code: normalizedCode }
     });

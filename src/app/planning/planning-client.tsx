@@ -47,7 +47,8 @@ import {
   deleteProjectAction,
   sendEmailNotificationAction,
   updateExecutionScheduleAction,
-  getExecutionSchedulesAction
+  getExecutionSchedulesAction,
+  getNextDocumentCodeAction
 } from "@/app/actions";
 
 interface PlanningClientProps {
@@ -240,33 +241,58 @@ export default function PlanningClient({ initialProjects, users, departments, cu
   const [newCode, setNewCode] = useState("");
   const [newStart, setNewStart] = useState("");
   const [newEnd, setNewEnd] = useState("");
-  const [newLead, setNewLead] = useState("");
+  const [newLeads, setNewLeads] = useState<string[]>([]);
 
   const closeNewProjectModal = () => {
     setIsCreating(false);
     setIsCopying(false);
   };
 
-  const makeUniqueCopyCode = (baseCode: string) => {
-    const normalized = baseCode.trim().toUpperCase();
-    const base = normalized.endsWith("-COPY") || normalized.includes("-COPY-") ? normalized : `${normalized}-COPY`;
-    let candidate = base;
-    let suffix = 2;
-    while (projects.some((p) => p.code.trim().toUpperCase() === candidate.trim().toUpperCase())) {
-      candidate = `${base}-${suffix++}`;
+  const openNewProjectModal = async () => {
+    setIsCopying(false);
+    setIsCreating(true);
+    setNewName("");
+    setNewStart(new Date().toISOString().split("T")[0]);
+    const endDateObj = new Date();
+    endDateObj.setDate(endDateObj.getDate() + 90);
+    setNewEnd(endDateObj.toISOString().split("T")[0]);
+    setNewLeads([]);
+    
+    try {
+      const nextCode = await getNextDocumentCodeAction("AP");
+      setNewCode(nextCode);
+    } catch (e) {
+      setNewCode("AUTO");
     }
-    return candidate;
   };
 
-  const openCopyProjectModal = (proj: AuditProject) => {
+  const openCopyProjectModal = async (proj: AuditProject) => {
     setIsCopying(true);
     setIsCreating(true);
     setSelectedProjectId(proj.id);
-    setNewName(`${proj.name} (Copy)`);
-    setNewCode(makeUniqueCopyCode(proj.code));
+    setNewName(""); // Keep blank as requested
     setNewStart(proj.startDate);
     setNewEnd(proj.endDate);
-    setNewLead(proj.leadAuditorId || "");
+    
+    const initialLeads: string[] = [];
+    if (proj.leadAuditorId) {
+      const matchedUser = users.find(u => u.id === proj.leadAuditorId || u.name === proj.leadAuditorId);
+      if (matchedUser && !initialLeads.includes(matchedUser.name)) initialLeads.push(matchedUser.name);
+    }
+    if (proj.auditorNames) {
+      proj.auditorNames.split(",").forEach(n => {
+        const clean = n.trim();
+        if (clean && !initialLeads.includes(clean)) initialLeads.push(clean);
+      });
+    }
+    setNewLeads(initialLeads);
+
+    try {
+      const nextCode = await getNextDocumentCodeAction("AP");
+      setNewCode(nextCode);
+    } catch (e) {
+      setNewCode("AUTO");
+    }
   };
 
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -703,23 +729,20 @@ export default function PlanningClient({ initialProjects, users, departments, cu
 
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newName || !newCode || !newStart || !newEnd) return;
+    if (!newName || !newStart || !newEnd) return;
 
-    const normalizedCode = newCode.trim().toUpperCase();
-    if (projects.some((p) => p.code.trim().toUpperCase() === normalizedCode)) {
-      showFeedback("That Project Code already exists. Please use a unique code for the copied Audit Plan.");
-      return;
-    }
+    const firstLeadUser = users.find(u => newLeads.includes(u.name) || newLeads.includes(u.id));
+    const leadAuditorIdParam = firstLeadUser ? firstLeadUser.id : null;
 
     const newProj = await createProjectAction(
       newName,
-      normalizedCode,
+      "AUTO", // Always auto-generate and increment sequence on the backend
       "PLANNING",
       "",
       "",
       newStart,
       newEnd,
-      newLead || null
+      leadAuditorIdParam
     );
 
     let finalProj = newProj;
@@ -742,13 +765,23 @@ export default function PlanningClient({ initialProjects, users, departments, cu
           approvals: originalProj.approvals || "",
           deptPicIds: originalProj.deptPicIds || "",
           departments: originalProj.departments || "",
-          auditorNames: originalProj.auditorNames || "",
-          auditorIds: originalProj.auditorIds || []
+          auditorNames: newLeads.length > 0 ? newLeads.join(",") : (originalProj.auditorNames || ""),
+          auditorIds: newLeads.length > 0 
+            ? newLeads.map(l => users.find(u => u.name === l || u.id === l)?.id || l) 
+            : (originalProj.auditorIds || [])
         };
         const updated = await updateProjectAction(newProj.id, copyPayload);
         if (updated) {
           finalProj = updated;
         }
+      }
+    } else if (newLeads.length > 0) {
+      const updated = await updateProjectAction(newProj.id, {
+        auditorNames: newLeads.join(","),
+        auditorIds: newLeads.map(l => users.find(u => u.name === l || u.id === l)?.id || l)
+      });
+      if (updated) {
+        finalProj = updated;
       }
     }
 
@@ -761,7 +794,7 @@ export default function PlanningClient({ initialProjects, users, departments, cu
     setNewCode("");
     setNewStart("");
     setNewEnd("");
-    setNewLead("");
+    setNewLeads([]);
   };
 
   // Multiple Auditors selection handlers
@@ -913,7 +946,7 @@ export default function PlanningClient({ initialProjects, users, departments, cu
           onClick={closeNewProjectModal}
         >
           <div 
-            className="bg-white dark:bg-slate-950 w-full max-w-2xl rounded-lg shadow-2xl flex flex-col overflow-hidden h-fit border border-slate-200 dark:border-slate-850 scoping-modal-container transform scale-100 animate-in zoom-in-95 duration-200"
+            className="bg-white dark:bg-slate-950 w-full max-w-2xl rounded-lg shadow-2xl flex flex-col overflow-visible h-fit border border-slate-200 dark:border-slate-850 scoping-modal-container transform scale-100 animate-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Modal Header */}
@@ -940,7 +973,7 @@ export default function PlanningClient({ initialProjects, users, departments, cu
 
             {/* Modal Form with Word Document table styling */}
             <form onSubmit={handleCreateProject} className="p-8 space-y-6">
-              <div className="overflow-x-auto border border-slate-300 dark:border-slate-800 rounded-md">
+              <div className="overflow-visible border border-slate-300 dark:border-slate-800 rounded-md">
                 <table className="w-full border-collapse text-xs">
                   <tbody>
                     {/* Row 1: Project Name */}
@@ -963,16 +996,15 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                     {/* Row 2: Project Code */}
                     <tr className="border-b border-slate-300 dark:border-slate-800/80">
                       <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
-                        Project Code*:
+                        Project Code:
                       </td>
                       <td colSpan={3} className="px-4 py-2">
                         <input
                           type="text"
-                          required
+                          readOnly
                           value={newCode}
-                          onChange={(e) => setNewCode(e.target.value)}
-                          // placeholder="e.g. AUD-2026-003"
-                          className="w-full bg-transparent border-none p-0 text-xs focus:outline-none font-sans text-slate-800 dark:text-slate-100"
+                          placeholder="N/A"
+                          className="w-full bg-transparent border-none p-0 text-xs focus:outline-none font-sans font-bold text-slate-700 dark:text-slate-300 cursor-not-allowed select-none"
                         />
                       </td>
                     </tr>
@@ -1010,19 +1042,17 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                       <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300">
                         Lead Auditor:
                       </td>
-                      <td colSpan={3} className="px-4 py-1.5">
-                        <select
-                          value={newLead}
-                          onChange={(e) => setNewLead(e.target.value)}
-                          className="w-full bg-transparent border-none p-0 text-xs focus:outline-none text-slate-800 dark:text-slate-100 cursor-pointer"
-                        >
-                          <option value="" className="bg-white dark:bg-slate-950">Select Lead Auditor...</option>
-                          {leadAuditors.map((u) => (
-                            <option key={u.id} value={u.id} className="bg-white dark:bg-slate-950">
-                              {u.name}
-                            </option>
-                          ))}
-                        </select>
+                      <td colSpan={3} className="px-4 py-2">
+                        <MultiSelect
+                          selectedValues={newLeads}
+                          onChange={setNewLeads}
+                          options={users.map((u) => ({
+                            value: u.name,
+                            label: u.name,
+                            subLabel: `${u.role.replace('_', ' ')}${u.departmentName ? ` • ${u.departmentName}` : ''}`
+                          }))}
+                          placeholder="Select Lead Auditors..."
+                        />
                       </td>
                     </tr>
                   </tbody>
@@ -1054,7 +1084,7 @@ export default function PlanningClient({ initialProjects, users, departments, cu
         
         {/* ActionToolbar */}
         <ActionToolbar
-          onCreate={canModify ? () => { setIsCopying(false); setIsCreating(true); } : undefined}
+          onCreate={canModify ? openNewProjectModal : undefined}
           onRefresh={() => {
             setSearchQuery("");
             setStatusFilter("ALL");

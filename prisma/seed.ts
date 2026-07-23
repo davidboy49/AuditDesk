@@ -7,6 +7,7 @@ const prisma = new PrismaClient({ adapter });
 
 async function main() {
   // Clear existing records
+  await prisma.documentSequence.deleteMany();
   await prisma.finding.deleteMany();
   await prisma.document.deleteMany();
   await prisma.report.deleteMany();
@@ -18,6 +19,14 @@ async function main() {
   await prisma.emailTemplate.deleteMany();
 
   console.log("Cleared existing database records.");
+
+  // Seed Document Sequences (starts from 0 so first generated code is AP-2026-0001)
+  await prisma.documentSequence.create({
+    data: { key: "AP-2026", currentVal: 0 }
+  });
+  await prisma.documentSequence.create({
+    data: { key: "AP-2025", currentVal: 0 }
+  });
 
   // 1. Seed Departments
   const dept1 = await prisma.department.create({
@@ -72,7 +81,7 @@ async function main() {
     data: {
       id: "proj-1",
       name: "ISO 27001 Security Assessment",
-      code: "AUD-2026-001",
+      code: "AP-2026-0001",
       status: "RELEASED",
       scope: "<p>The scope of this audit covers all <strong>production servers</strong>, firewall rules, and deployment pipelines managed by the IT department. Particular focus is placed on access control list checks, backup retention policies, and encryption of data-at-rest.</p>",
       planningDetails: "<p>Timeline and key milestones:</p><ul><li>Phase 1: Initial discovery and documentation review (Completed)</li><li>Phase 2: Technical scanning and controls testing (Active)</li><li>Phase 3: Executive reporting and final review</li></ul>",
@@ -87,7 +96,7 @@ async function main() {
     data: {
       id: "proj-2",
       name: "SOX Financial Controls Audit",
-      code: "AUD-2026-002",
+      code: "AP-2026-0002",
       status: "PLANNING",
       scope: "<p>Annual review of internal control over financial reporting. Scope includes ledger balancing, approvals logic for transactions exceeding $50k, and segregation of duties within the billing panel.</p>",
       planningDetails: "<p>Kickoff meeting scheduled for July 15th. Interviews will be conducted with the billing leads and the finance VP.</p>",
@@ -102,7 +111,7 @@ async function main() {
     data: {
       id: "proj-3",
       name: "GDPR Data Privacy Review",
-      code: "AUD-2025-004",
+      code: "AP-2025-0001",
       status: "RELEASED",
       scope: "<p>Verifying compliance with data subject rights, consent workflows, and personal data storage limits in the EU region.</p>",
       planningDetails: "<p>Report drafting started. Awaiting confirmation on data minimization protocols for user logs.</p>",

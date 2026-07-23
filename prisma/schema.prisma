@@ -184,3 +184,10 @@ model EmailTemplate {
   body      String
   updatedAt DateTime @updatedAt
 }
+
+model DocumentSequence {
+  key        String   @id // e.g. "AP-2026", "ES-2026", "FD-2026"
+  currentVal Int      @default(0)
+  updatedAt  DateTime @updatedAt
+}
+

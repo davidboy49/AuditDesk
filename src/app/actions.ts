@@ -1,6 +1,7 @@
 "use server";
 
 import { dbService } from "@/lib/dbService";
+import { getNextDocumentCodePreview } from "@/lib/codeGenerator";
 import { revalidatePath } from "next/cache";
 import { Department, UserGroup, UserRole, User, AuditProject, Finding, Attachment, ExecutionSchedule } from "@/lib/mockData";
 import { getCurrentUserServer, RBAC } from "@/lib/auth";
@@ -104,6 +105,10 @@ export async function updateProjectAction(id: string, updates: Partial<AuditProj
   return result;
 }
 
+export async function getNextDocumentCodeAction(prefix: string = "AP", year?: number): Promise<string> {
+  return getNextDocumentCodePreview(prefix, year);
+}
+
 export async function createProjectAction(
   name: string, 
   code: string, 
@@ -115,7 +120,7 @@ export async function createProjectAction(
   leadAuditorId: string | null
 ): Promise<AuditProject> {
   const result = await dbService.createProject(name, code, status, scope, planningDetails, startDate, endDate, leadAuditorId);
-  await logActivity("CREATE_PROJECT", `Created project "${name}" (Code: ${code})`);
+  await logActivity("CREATE_PROJECT", `Created project "${name}" (Code: ${result.code})`);
   revalidatePath("/planning");
   revalidatePath("/dashboard");
   return result;
