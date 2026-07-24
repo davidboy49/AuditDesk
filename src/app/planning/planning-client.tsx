@@ -32,7 +32,9 @@ import {
   CheckCircle2,
   QrCode,
   Maximize2,
-  Check
+  Check,
+  Lock,
+  Unlock
 } from "lucide-react";
 import { AuditProject, User, Attachment, ScheduleRow, Department } from "@/lib/mockData";
 import { RBAC } from "@/lib/auth";
@@ -277,12 +279,13 @@ export default function PlanningClient({ initialProjects, users, departments, cu
     const initialLeads: string[] = [];
     if (proj.leadAuditorId) {
       const matchedUser = users.find(u => u.id === proj.leadAuditorId || u.name === proj.leadAuditorId);
-      if (matchedUser && !initialLeads.includes(matchedUser.name)) initialLeads.push(matchedUser.name);
+      if (matchedUser && !initialLeads.includes(matchedUser.id)) initialLeads.push(matchedUser.id);
     }
     if (proj.auditorNames) {
       proj.auditorNames.split(",").forEach(n => {
         const clean = n.trim();
-        if (clean && !initialLeads.includes(clean)) initialLeads.push(clean);
+        const matched = users.find(u => u.name === clean || u.id === clean);
+        if (matched && !initialLeads.includes(matched.id)) initialLeads.push(matched.id);
       });
     }
     setNewLeads(initialLeads);
@@ -415,13 +418,17 @@ export default function PlanningClient({ initialProjects, users, departments, cu
     setEditPlanning(proj.planningDetails);
     setEditStart(proj.startDate);
     setEditEnd(proj.endDate);
-    setEditLead(proj.leadAuditorId || "");
+    setEditLead(proj.leadAuditorId ? (users.find(u => u.id === proj.leadAuditorId || u.name === proj.leadAuditorId)?.id || proj.leadAuditorId) : "");
     
     // Set custom SQLite integrations
     setEditWorkflowStage(proj.workflowStage || "DRAFTING");
-    setEditDepartments([]);
+    setEditDepartments(proj.departments ? proj.departments.split(",").map(s => s.trim()).filter(Boolean) : []);
     setEditAuditorIds(proj.auditorNames ? proj.auditorNames.split(",").map(s => s.trim()).filter(Boolean) : []);
-    setEditDeptPicIds(proj.deptPicIds ? proj.deptPicIds.split(",").filter(Boolean) : []);
+    setEditDeptPicIds(proj.deptPicIds ? proj.deptPicIds.split(",").map(s => {
+      const clean = s.trim();
+      const matched = users.find(u => u.name === clean || u.id === clean);
+      return matched ? matched.name : clean;
+    }).filter(Boolean) : []);
     setEditAttachments(proj.attachments || []);
 
     // Load scoping values from database fields, with default fallback templates if null/empty
@@ -507,7 +514,7 @@ export default function PlanningClient({ initialProjects, users, departments, cu
         deptPicIds: editDeptPicIds.join(","),
         departments: editDepartments.join(","),
         auditorIds: editAuditorIds,
-        auditorNames: editAuditorIds.join(","),
+        auditorNames: editAuditorIds.map(id => users.find(u => u.id === id)?.name || id).join(","),
         objectives: editObjectives,
         riskProcess: editRiskProcess,
         riskClass: editRiskClass,
@@ -563,7 +570,7 @@ export default function PlanningClient({ initialProjects, users, departments, cu
         deptPicIds: editDeptPicIds.join(","),
         departments: editDepartments.join(","),
         auditorIds: editAuditorIds,
-        auditorNames: editAuditorIds.join(","),
+        auditorNames: editAuditorIds.map(id => users.find(u => u.id === id)?.name || id).join(","),
         objectives: editObjectives,
         riskProcess: editRiskProcess,
         riskClass: editRiskClass,
@@ -727,12 +734,37 @@ export default function PlanningClient({ initialProjects, users, departments, cu
     }
   };
 
+  const handleClosePlan = async () => {
+    if (!selectedProject) return;
+    if (!window.confirm("Are you sure you want to CLOSE this Audit Plan once and for all?\n\nOnce closed, no new or existing Open Meetings, Execution Schedules, or Audit Findings will be allowed to point to this plan.")) return;
+    await saveStatusChange("CLOSED");
+    const emailResult = await sendEmailNotificationAction("planning", selectedProject.id, {
+      status: "CLOSED",
+      details: "The audit plan has been officially closed and archived by the Lead Auditor/Admin."
+    });
+    if (emailResult.success) {
+      triggerEmailAlerts(emailResult.simulatedAlerts);
+    }
+  };
+
+  const handleReopenClosedPlan = async () => {
+    if (!selectedProject) return;
+    if (!window.confirm("Are you sure you want to REOPEN this closed Audit Plan?")) return;
+    await saveStatusChange("RELEASED");
+    const emailResult = await sendEmailNotificationAction("planning", selectedProject.id, {
+      status: "RELEASED (REOPENED)",
+      details: "The closed audit plan has been reopened by the Lead Auditor/Admin."
+    });
+    if (emailResult.success) {
+      triggerEmailAlerts(emailResult.simulatedAlerts);
+    }
+  };
+
   const handleCreateProject = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || !newStart || !newEnd) return;
 
-    const firstLeadUser = users.find(u => newLeads.includes(u.name) || newLeads.includes(u.id));
-    const leadAuditorIdParam = firstLeadUser ? firstLeadUser.id : null;
+    const leadAuditorIdParam = newLeads[0] || null;
 
     const newProj = await createProjectAction(
       newName,
@@ -1118,7 +1150,10 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                 let statusText = "Planning";
                 let statusColor = "text-amber-500";
                 
-                if (proj.status === "RELEASED") {
+                if (proj.status === "CLOSED") {
+                  statusText = "Closed";
+                  statusColor = "text-slate-400 dark:text-slate-500 font-semibold";
+                } else if (proj.status === "RELEASED") {
                   statusText = "Released";
                   statusColor = "text-[#30b050]";
                 } else if (proj.status === "SUBMITTED_FOR_APPROVAL") {
@@ -1148,7 +1183,7 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                       {proj.name}
                     </td>
                     <td className="px-6 py-4 text-slate-500">
-                      {users.find(u => u.id === proj.leadAuditorId)?.name || proj.leadAuditorId || "Unassigned"}
+                      {users.find(u => u.id === proj.leadAuditorId || u.name === proj.leadAuditorId)?.name || proj.leadAuditorId || "Unassigned"}
                     </td>
                     <td className="px-6 py-4 text-slate-500">
                       {proj.startDate}
@@ -1221,7 +1256,7 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                 {/* Meta details row under header */}
                 <div className="flex flex-wrap items-center gap-x-5 gap-y-2 pt-1 text-[10px] font-sans text-slate-400">
                   <span className="bg-sky-50 dark:bg-sky-950/40 text-sky-600 dark:text-sky-400 border border-sky-100 dark:border-sky-900/50 px-2 py-0.5 rounded font-bold uppercase">
-                    {editStatus === "PLANNING" ? "Planning" : editStatus === "SUBMITTED_FOR_APPROVAL" ? "Submitted for Approval" : editStatus === "RELEASED" ? "Released" : editStatus}
+                    {editStatus === "CLOSED" ? "Closed" : editStatus === "PLANNING" ? "Planning" : editStatus === "SUBMITTED_FOR_APPROVAL" ? "Submitted for Approval" : editStatus === "RELEASED" ? "Released" : editStatus}
                   </span>
                   <span className="flex items-center gap-1 font-roboto">
                     <CalendarDays className="w-3.5 h-3.5 font-roboto" /> Created {selectedProject.startDate}
@@ -1319,9 +1354,39 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                 )}
 
                 {editStatus === "RELEASED" && (
-                  <span className="text-xs font-sans font-bold text-[#30b050] bg-green-500/10 px-3 py-2 rounded border border-green-500/25 font-sans">
-                    Approved & Released (Locked)
-                  </span>
+                  <>
+                    <span className="text-xs font-sans font-bold text-[#30b050] bg-green-500/10 px-3 py-2 rounded border border-green-500/25 font-sans">
+                      Approved & Released (Locked)
+                    </span>
+                    {(currentUser.role === "ADMIN" || currentUser.role === "LEAD_AUDITOR") && (
+                      <button
+                        type="button"
+                        onClick={handleClosePlan}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded transition-colors cursor-pointer"
+                        title="Close this Audit Plan once and for all"
+                      >
+                        <Lock className="w-3.5 h-3.5 text-slate-300" /> Close Plan
+                      </button>
+                    )}
+                  </>
+                )}
+
+                {editStatus === "CLOSED" && (
+                  <>
+                    <span className="text-xs font-sans font-bold text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-3 py-2 rounded border border-slate-300 dark:border-slate-700 font-sans">
+                      Closed & Archived (Locked)
+                    </span>
+                    {(currentUser.role === "ADMIN" || currentUser.role === "LEAD_AUDITOR") && (
+                      <button
+                        type="button"
+                        onClick={handleReopenClosedPlan}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold rounded transition-colors cursor-pointer"
+                        title="Reopen this Closed Audit Plan"
+                      >
+                        <Unlock className="w-3.5 h-3.5" /> Reopen Plan
+                      </button>
+                    )}
+                  </>
                 )}
 
                 <button
@@ -1363,10 +1428,10 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                             <img 
                               src={`https://api.qrserver.com/v1/create-qr-code/?size=90x90&data=${encodeURIComponent(
                                 typeof window !== "undefined" 
-                                  ? `${window.location.origin}/planning?id=${selectedProject.id}` 
-                                  : `/planning?id=${selectedProject.id}`
+                                  ? `${window.location.origin}/meetings/scan/${selectedProject.id}` 
+                                  : `/meetings/scan/${selectedProject.id}`
                               )}`} 
-                              alt="QR Code" 
+                              alt="Universal QR Code" 
                               className="w-[88px] h-[88px] object-contain rounded"
                             />
                             <div className="absolute top-[38px] left-[38px] w-5 h-5 bg-white rounded-sm p-0.5 shadow border border-slate-200 flex items-center justify-center pointer-events-none">
@@ -1382,13 +1447,9 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                               <Maximize2 className="w-4 h-4 drop-shadow-md text-white" />
                             </div>
                           </div>
-                          
                           <div className="flex items-center gap-1 px-2 py-0.5 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded shadow-2xs group-hover:border-[#0066cc] transition-colors">
                             <span className="text-[10px] font-roboto font-bold uppercase tracking-widest text-slate-700 dark:text-slate-200 font-mono">
-                              {(() => {
-                                const clean = selectedProject.id.replace(/-/g, "").toUpperCase();
-                                return `${clean.slice(0, 5)}-${clean.slice(5, 9)}`;
-                              })()}
+                              {selectedProject.code}
                             </span>
                             <Maximize2 className="w-2.5 h-2.5 text-slate-400 group-hover:text-[#0066cc] transition-colors" />
                           </div>
@@ -1411,7 +1472,11 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-sans font-bold uppercase text-slate-500">Lead Auditor</label>
                       <MultiSelect
-                        selectedValues={editLead ? editLead.split(",").map(s => s.trim()).filter(Boolean) : []}
+                        selectedValues={editLead ? editLead.split(",").map(s => {
+                          const clean = s.trim();
+                          const matched = users.find(u => u.name === clean || u.id === clean);
+                          return matched ? matched.name : clean;
+                        }).filter(Boolean) : []}
                         onChange={(values) => setEditLead(values.join(", "))}
                         disabled={isReadOnly}
                         options={users
@@ -1427,7 +1492,10 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                     <div className="space-y-2 relative">
                       <label className="text-xs font-sans font-bold uppercase text-slate-500">Auditors</label>
                       <MultiSelect
-                        selectedValues={editAuditorIds}
+                        selectedValues={editAuditorIds.map(s => {
+                          const matched = users.find(u => u.id === s || u.name === s);
+                          return matched ? matched.name : s;
+                        })}
                         onChange={(values) => setEditAuditorIds(values)}
                         disabled={isReadOnly}
                         options={users
@@ -1447,7 +1515,10 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-sans font-bold uppercase text-slate-500">Department PIC</label>
                       <MultiSelect
-                        selectedValues={editDeptPicIds}
+                        selectedValues={editDeptPicIds.map(s => {
+                          const matched = users.find(u => u.name === s || u.id === s);
+                          return matched ? matched.name : s;
+                        })}
                         onChange={(values) => {
                           setEditDeptPicIds(values);
                           setAttendeeConfirmations(prev => pruneConfirmations(values, prev));
@@ -1475,51 +1546,6 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                         placeholder="Select Department(s)..."
                       />
                     </div>
-
-                    {editDeptPicIds.length > 0 && (
-                      <div className="mt-3 rounded-md border border-slate-200 dark:border-slate-800 bg-slate-50/70 dark:bg-slate-950/50 p-3 space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="text-[11px] font-bold uppercase tracking-wide text-slate-600 dark:text-slate-300">Attendance Confirmation</span>
-                          <span className="text-[11px] font-bold text-emerald-700 dark:text-emerald-300">
-                            {editDeptPicIds.filter(name => attendeeConfirmations[name]).length}/{editDeptPicIds.length} confirmed
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-1 gap-2">
-                          {editDeptPicIds.map((attendeeName) => {
-                            const confirmation = attendeeConfirmations[attendeeName];
-                            const canConfirm = canConfirmAttendee(attendeeName);
-                            const confirmedAt = confirmation?.confirmedAt
-                              ? new Date(confirmation.confirmedAt).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
-                              : "";
-
-                            return (
-                              <div key={attendeeName} className="flex items-center justify-between gap-3 rounded border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 py-2">
-                                <div className="min-w-0">
-                                  <div className="truncate text-xs font-bold text-slate-800 dark:text-slate-100">{attendeeName}</div>
-                                  <div className="text-[10px] text-slate-500 dark:text-slate-400">
-                                    {confirmation ? `Confirmed by ${confirmation.confirmedBy} on ${confirmedAt}` : "Pending confirmation"}
-                                  </div>
-                                </div>
-                                <button
-                                  type="button"
-                                  onClick={() => handleConfirmAttendee(attendeeName)}
-                                  disabled={Boolean(confirmation) || !canConfirm}
-                                  className={`shrink-0 inline-flex items-center gap-1.5 rounded px-2.5 py-1.5 text-[11px] font-bold transition-colors ${confirmation
-                                    ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300"
-                                    : canConfirm
-                                      ? "bg-[#05375c] text-white hover:bg-[#074776] cursor-pointer"
-                                      : "bg-slate-100 text-slate-400 dark:bg-slate-800 dark:text-slate-500 cursor-not-allowed"
-                                  }`}
-                                >
-                                  {confirmation && <CheckCircle2 className="w-3.5 h-3.5" />}
-                                  {confirmation ? "Confirmed" : canConfirm ? "Confirm" : "Waiting"}
-                                </button>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
 
@@ -1620,7 +1646,7 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                     <div className="space-y-1.5 text-xs text-slate-600 dark:text-slate-400 font-sans">
                       {/* Meetings */}
                       {(() => {
-                        const meetings = selectedProject.executionSchedules?.filter(e => e.language === "meeting") || [];
+                        const meetings = selectedProject.openMeetings?.filter(m => !m.isDeleted) || [];
                         if (meetings.length === 0) return null;
                         return meetings.map(m => (
                           <div key={m.id} className="flex items-center gap-1.5">
@@ -1676,7 +1702,7 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                       })()}
 
                       {/* Fallback if nothing is linked */}
-                      {(!selectedProject.executionSchedules?.length && !selectedProject.findings?.length) && (
+                      {(!selectedProject.openMeetings?.filter(m => !m.isDeleted).length && !selectedProject.executionSchedules?.filter(e => e.language !== "meeting" && e.language !== "finding").length && !selectedProject.findings?.length) && (
                         <div className="text-slate-400 italic text-[11px] font-sans">
                           No linked meetings, schedules, or findings for this Audit Plan.
                         </div>
@@ -2142,7 +2168,7 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                 </div>
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 dark:text-slate-100 font-sans">
-                    Audit Plan QR Code
+                    Universal QR Code
                   </h3>
                   <p className="text-xs text-slate-500 dark:text-slate-400 font-roboto truncate max-w-[200px]" title={selectedProject.name}>
                     {selectedProject.code} &bull; {selectedProject.name}
@@ -2164,10 +2190,10 @@ export default function PlanningClient({ initialProjects, users, departments, cu
                 <img 
                   src={`https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=${encodeURIComponent(
                     typeof window !== "undefined" 
-                      ? `${window.location.origin}/planning?id=${selectedProject.id}` 
-                      : `/planning?id=${selectedProject.id}`
+                      ? `${window.location.origin}/meetings/scan/${selectedProject.id}` 
+                      : `/meetings/scan/${selectedProject.id}`
                   )}`} 
-                  alt="Audit Plan Enlarged QR Code" 
+                  alt="Universal QR Code" 
                   className="w-[210px] h-[210px] object-contain rounded"
                 />
                 <div className="absolute top-[97px] left-[97px] w-11 h-11 bg-white rounded-md p-1 shadow-md border border-slate-200 flex items-center justify-center pointer-events-none">
@@ -2181,19 +2207,16 @@ export default function PlanningClient({ initialProjects, users, departments, cu
 
               {/* Project Verification ID Badge */}
               <div className="flex items-center justify-center gap-2 bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-1 rounded-full text-xs font-mono font-bold text-slate-700 dark:text-slate-300">
-                <span className="text-slate-400 font-sans font-normal text-[10px] uppercase">Plan ID:</span>
+                <span className="text-slate-400 font-sans font-normal text-[10px] uppercase">Plan Universal QR ID:</span>
                 <span>
-                  {(() => {
-                    const clean = selectedProject.id.replace(/-/g, "").toUpperCase();
-                    return `${clean.slice(0, 5)}-${clean.slice(5, 9)}`;
-                  })()}
+                  {selectedProject.code}
                 </span>
               </div>
             </div>
 
             {/* Description / Instructions */}
             <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed px-2">
-              Scan this QR code using a smartphone or tablet camera to instantly view or verify this Audit Plan.
+              Scan this Universal QR Code to view the Open Meeting agendas, verify Audit Plan scope, and confirm department attendance & consent.
             </p>
 
             {/* Action Buttons */}

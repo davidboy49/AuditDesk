@@ -101,6 +101,7 @@ export async function updateProjectAction(id: string, updates: Partial<AuditProj
   const result = await dbService.updateProject(id, updates);
   await logActivity("UPDATE_PROJECT", `Updated project ID: ${id}`);
   revalidatePath("/planning");
+  revalidatePath("/meetings");
   revalidatePath("/dashboard");
   return result;
 }
@@ -201,6 +202,7 @@ export async function getExecutionSchedulesAction(): Promise<any[]> {
 
 export async function createExecutionScheduleAction(data: {
   projectId: string;
+  openMeetingId?: string;
   departments: string;
   address: string;
   visitNumber: string;
@@ -221,8 +223,9 @@ export async function createExecutionScheduleAction(data: {
   lastModifiedBy?: string;
 }): Promise<any> {
   const result = await dbService.createExecutionSchedule(data);
-  await logActivity("CREATE_SCHEDULE", `Created execution schedule for project ID: ${data.projectId}`);
+  await logActivity("CREATE_SCHEDULE", `Created execution schedule from Open Meeting ${data.openMeetingId} for project ID: ${data.projectId}`);
   revalidatePath("/schedule");
+  revalidatePath("/meetings");
   revalidatePath("/dashboard");
   return result;
 }
@@ -279,6 +282,34 @@ export async function deleteExecutionScheduleAction(id: string): Promise<boolean
   const result = await dbService.deleteExecutionSchedule(id);
   await logActivity("DELETE_SCHEDULE", `Deleted execution schedule ID: ${id}`);
   revalidatePath("/schedule");
+  revalidatePath("/dashboard");
+  return result;
+}
+
+export async function getOpenMeetingsAction(): Promise<any[]> {
+  return dbService.getOpenMeetings();
+}
+
+export async function createOpenMeetingAction(data: any): Promise<any> {
+  const result = await dbService.createOpenMeeting(data);
+  await logActivity("CREATE_OPEN_MEETING", `Created open meeting for project ID: ${data.projectId}`);
+  revalidatePath("/meetings");
+  revalidatePath("/dashboard");
+  return result;
+}
+
+export async function updateOpenMeetingAction(id: string, data: any): Promise<any> {
+  const result = await dbService.updateOpenMeeting(id, data);
+  await logActivity("UPDATE_OPEN_MEETING", `Updated open meeting ID: ${id}`);
+  revalidatePath("/meetings");
+  revalidatePath("/dashboard");
+  return result;
+}
+
+export async function deleteOpenMeetingAction(id: string): Promise<boolean> {
+  const result = await dbService.deleteOpenMeeting(id);
+  await logActivity("DELETE_OPEN_MEETING", `Deleted open meeting ID: ${id}`);
+  revalidatePath("/meetings");
   revalidatePath("/dashboard");
   return result;
 }
@@ -514,13 +545,13 @@ export async function sendEmailNotificationAction(
     const recipientsMap = new Map<string, User>();
 
     if (project.leadAuditorId) {
-      const lead = allUsers.find(u => u.id === project.leadAuditorId);
+      const lead = allUsers.find(u => u.id === project.leadAuditorId || u.name === project.leadAuditorId);
       if (lead) recipientsMap.set(lead.email, lead);
     }
 
     if (project.auditorIds) {
       for (const audId of project.auditorIds) {
-        const auditor = allUsers.find(u => u.id === audId);
+        const auditor = allUsers.find(u => u.id === audId || u.name === audId);
         if (auditor) recipientsMap.set(auditor.email, auditor);
       }
     }
@@ -528,7 +559,7 @@ export async function sendEmailNotificationAction(
     if (project.deptPicIds) {
       const picIds = project.deptPicIds.split(",").map(id => id.trim()).filter(Boolean);
       for (const picId of picIds) {
-        const pic = allUsers.find(u => u.id === picId);
+        const pic = allUsers.find(u => u.id === picId || u.name === picId);
         if (pic) recipientsMap.set(pic.email, pic);
       }
     }
@@ -601,11 +632,15 @@ export async function sendEmailNotificationAction(
   }
 }
 
-export async function getOpenMeetingByQrAction(qrToken: string): Promise<{ schedule: any; currentUser: any; departments: any[] }> {
+export async function getOpenMeetingByQrAction(qrToken: string): Promise<{ schedule: any; currentUser: any; departments: any[]; projectMeetings: any[] }> {
   const currentUser = await getCurrentUserServer();
-  const schedule = await dbService.getExecutionScheduleByQrToken(qrToken);
+  const schedule = await dbService.getOpenMeetingByQrToken(qrToken);
   const departments = await dbService.getDepartments();
-  return { schedule, currentUser, departments };
+  let projectMeetings: any[] = [];
+  if (schedule) {
+    projectMeetings = await dbService.getOpenMeetingsByProject(schedule.projectId);
+  }
+  return { schedule, currentUser, departments, projectMeetings };
 }
 
 export async function recordDepartmentConsentAction(scheduleId: string, departmentId: string, status: "ACCEPTED" | "REVISION_REQUESTED", comments?: string): Promise<any> {
@@ -618,8 +653,8 @@ export async function recordDepartmentConsentAction(scheduleId: string, departme
     timestamp: new Date().toISOString(),
     comments: comments || ""
   };
-  const updatedSchedule = await dbService.updateDepartmentConsent(scheduleId, departmentId, consentObj);
-  await logActivity("RECORD_DEPARTMENT_CONSENT", `User ${currentUser.name} (${departmentId}) recorded consent status: ${status} for schedule ${scheduleId}`);
+  const updatedSchedule = await dbService.updateOpenMeetingDepartmentConsent(scheduleId, departmentId, consentObj);
+  await logActivity("RECORD_DEPARTMENT_CONSENT", `User ${currentUser.name} (${departmentId}) recorded consent status: ${status} for meeting ${scheduleId}`);
   revalidatePath("/meetings");
   revalidatePath(`/meetings/scan/${updatedSchedule.qrToken || scheduleId}`);
   return updatedSchedule;

@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { 
   ExecutionSchedule, 
+  OpenMeeting,
   AuditProject, 
   User, 
   Department,
@@ -97,6 +98,7 @@ const formatTimeRange = (from: string, to: string) => {
 
 interface ScheduleClientProps {
   initialSchedules: ExecutionSchedule[];
+  releasedOpenMeetings: OpenMeeting[];
   projects: AuditProject[];
   users: User[];
   departments: Department[];
@@ -105,6 +107,7 @@ interface ScheduleClientProps {
 
 export default function ScheduleClient({ 
   initialSchedules, 
+  releasedOpenMeetings,
   projects, 
   users, 
   departments,
@@ -129,6 +132,19 @@ export default function ScheduleClient({
   const [visitNumber, setVisitNumber] = useState("01");
   const [actualVisitDate, setActualVisitDate] = useState("");
   const [auditPeriod, setAuditPeriod] = useState("");
+  const [auditPeriodStart, setAuditPeriodStart] = useState("");
+  const [auditPeriodEnd, setAuditPeriodEnd] = useState("");
+
+  const handleAuditPeriodStartChange = (val: string) => {
+    setAuditPeriodStart(val);
+    setAuditPeriod(val && auditPeriodEnd ? `${val} to ${auditPeriodEnd}` : val || auditPeriodEnd || "");
+  };
+
+  const handleAuditPeriodEndChange = (val: string) => {
+    setAuditPeriodEnd(val);
+    setAuditPeriod(auditPeriodStart && val ? `${auditPeriodStart} to ${val}` : auditPeriodStart || val || "");
+  };
+
   const [leadExecution, setLeadExecution] = useState("");
   const [teamMembers, setTeamMembers] = useState("");
   const [additionalAttendees, setAdditionalAttendees] = useState("");
@@ -197,7 +213,7 @@ export default function ScheduleClient({
   const isProjectMember = (proj: any) => {
     if (!proj) return false;
     if (currentUser?.role === "ADMIN") return true;
-    if (proj.leadAuditorId === currentUser?.id) return true;
+    if (proj.leadAuditorId === currentUser?.id || proj.leadAuditorId === currentUser?.name) return true;
     const auditorsList = proj.auditorNames ? proj.auditorNames.split(",").map((s: string) => s.trim()) : [];
     if (auditorsList.includes(currentUser?.name)) return true;
     if (proj.auditorIds?.includes(currentUser?.id)) return true;
@@ -229,7 +245,7 @@ export default function ScheduleClient({
       return;
     }
 
-    const meeting = initialSchedules.find(s => s.id === meetingId);
+    const meeting = releasedOpenMeetings.find(s => s.id === meetingId);
     if (!meeting) return;
 
     setSelectedProjectId(meeting.projectId);
@@ -238,6 +254,14 @@ export default function ScheduleClient({
     setVisitNumber(meeting.visitNumber || "01");
     setActualVisitDate(meeting.actualVisitDate || "");
     setAuditPeriod(meeting.auditPeriod || "");
+    const parts = (meeting.auditPeriod || "").split(" to ");
+    if (parts.length === 2) {
+      setAuditPeriodStart(parts[0]);
+      setAuditPeriodEnd(parts[1]);
+    } else {
+      setAuditPeriodStart("");
+      setAuditPeriodEnd("");
+    }
     setLeadExecution(meeting.leadExecution || "");
     setTeamMembers(meeting.teamMembers || "");
     setAdditionalAttendees(meeting.additionalAttendees || "");
@@ -289,6 +313,8 @@ export default function ScheduleClient({
     setVisitNumber("01");
     setActualVisitDate("");
     setAuditPeriod("");
+    setAuditPeriodStart("");
+    setAuditPeriodEnd("");
     setLeadExecution("");
     setTeamMembers("");
     setAdditionalAttendees("");
@@ -302,12 +328,21 @@ export default function ScheduleClient({
 
   const openEditModal = (sched: ExecutionSchedule) => {
     setModalMode("edit");
+    setSelectedMeetingId(sched.openMeetingId || "");
     setSelectedProjectId(sched.projectId);
     setDepartmentsStr(sched.departments);
     setAddress(sched.address);
     setVisitNumber(sched.visitNumber);
     setActualVisitDate(sched.actualVisitDate);
     setAuditPeriod(sched.auditPeriod);
+    const parts = (sched.auditPeriod || "").split(" to ");
+    if (parts.length === 2) {
+      setAuditPeriodStart(parts[0]);
+      setAuditPeriodEnd(parts[1]);
+    } else {
+      setAuditPeriodStart("");
+      setAuditPeriodEnd("");
+    }
     setLeadExecution(sched.leadExecution);
     setTeamMembers(sched.teamMembers);
     setAdditionalAttendees(sched.additionalAttendees);
@@ -350,6 +385,7 @@ export default function ScheduleClient({
 
     const payload = {
       projectId: selectedProjectId,
+      openMeetingId: selectedMeetingId,
       departments: departmentsStr,
       address,
       visitNumber,
@@ -682,32 +718,41 @@ export default function ScheduleClient({
             <form onSubmit={handleSaveSchedule} className="p-8 space-y-8 overflow-y-auto max-h-[86vh]">
               
               {/* Select Open Meeting dropdown (only in create mode) */}
-              <div className="bg-slate-50 dark:bg-slate-900/50 p-4 rounded-lg border border-slate-200 dark:border-slate-850 space-y-3 no-print">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
-                  <Info className="w-4 h-4 text-[#0066cc]" />
-                  <span>Choose an Open Meeting to extract details and pre-populate schedule fields.</span>
-                </div>
-                {modalMode === "create" ? (
-                  <select
-                    required
-                    value={selectedMeetingId}
-                    onChange={(e) => handleMeetingSelect(e.target.value)}
-                    className="w-full bg-white dark:bg-slate-900 border border-slate-250 dark:border-slate-800 rounded-md px-3 py-2 text-xs focus:outline-none cursor-pointer text-slate-800 dark:text-slate-200"
-                  >
-                    <option value="">Choose Open Meeting...</option>
-                    {initialSchedules
-                      .filter(s => s.language === "meeting")
-                      .map(m => (
-                        <option key={m.id} value={m.id}>
-                          {m.visitNumber ? `${m.visitNumber} - ` : ""}{m.departments} ({projects.find(p => p.id === m.projectId)?.code || m.projectId})
-                        </option>
-                      ))}
-                  </select>
-                ) : (
-                  <div className="text-xs font-sans font-bold text-slate-800 dark:text-slate-200">
-                    Linked Plan: {projects.find(p => p.id === selectedProjectId)?.code} - {projects.find(p => p.id === selectedProjectId)?.name}
+              <div className="flex flex-col md:flex-row gap-4 items-center no-print">
+                <div className="flex-1 w-full">
+                  <div className="flex border border-slate-250 dark:border-slate-800 rounded-lg overflow-hidden h-12 items-center">
+                    <div className="bg-slate-50 dark:bg-slate-900/60 px-4 h-full flex items-center font-roboto font-bold text-xs text-slate-700 dark:text-slate-355 border-r border-slate-250 dark:border-slate-800 shrink-0 w-36">
+                      Linked Open Meeting
+                    </div>
+                    <div className="px-4 h-full flex items-center flex-1 bg-white dark:bg-slate-950">
+                      {modalMode === "create" ? (
+                        <select
+                          required
+                          value={selectedMeetingId}
+                          onChange={(e) => handleMeetingSelect(e.target.value)}
+                          className="w-full bg-transparent border-none p-0 text-xs focus:outline-none cursor-pointer text-slate-800 dark:text-slate-200 font-roboto font-bold"
+                        >
+                          <option value="">Choose Open Meeting...</option>
+                          {releasedOpenMeetings
+                            .filter(m => !schedules.some(schedule => schedule.openMeetingId === m.id))
+                            .map(m => {
+                              const project = projects.find(p => p.id === m.projectId);
+                              const isClosed = project?.status === "CLOSED";
+                              return (
+                                <option key={m.id} value={m.id} disabled={isClosed} className="bg-white dark:bg-slate-900">
+                                  {project?.code || m.projectId} - {m.departments} (Visit {m.visitNumber || "01"}){isClosed ? " - Audit Plan closed; reopen it first" : ""}
+                                </option>
+                              );
+                            })}
+                        </select>
+                      ) : (
+                        <span className="text-xs font-roboto font-bold text-slate-800 dark:text-slate-200 font-sans">
+                          {projects.find(p => p.id === selectedProjectId)?.code} - {releasedOpenMeetings.find(m => m.id === selectedMeetingId)?.departments || "Legacy schedule"}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                )}
+                </div>
               </div>
 
               {/* Document Summary Info Grid styled like a Word Document table */}
@@ -718,18 +763,10 @@ export default function ScheduleClient({
                       {/* Row 1: Departments */}
                       <tr className="border-b border-slate-300 dark:border-slate-800/80">
                         <td className="w-1/4 px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300 align-top">
-                          Department(s):
+                          Department:
                         </td>
-                        <td colSpan={3} className="px-4 py-2">
-                          <MultiSelect
-                            selectedValues={departmentsArray}
-                            onChange={setDepartmentsArray}
-                            options={departments.map(d => ({
-                              value: d.name,
-                              label: d.name
-                            }))}
-                            placeholder="Select Department(s)..."
-                          />
+                        <td colSpan={3} className="px-4 py-3 font-semibold text-slate-800 dark:text-slate-200 bg-white dark:bg-slate-950">
+                          {departmentsStr || <span className="text-slate-400 font-normal italic">Select an Open Meeting to auto-derive department</span>}
                         </td>
                       </tr>
 
@@ -784,13 +821,21 @@ export default function ScheduleClient({
                           Audit Period:
                         </td>
                         <td className="px-4 py-2 border-r border-slate-300 dark:border-slate-800/80">
-                          <input 
-                            type="text" 
-                            value={auditPeriod}
-                            onChange={(e) => setAuditPeriod(e.target.value)}
-                            placeholder="1 Apr-30 Jun, 2026 (Three months)"
-                            className="w-full bg-transparent border-none p-0 text-xs focus:outline-none text-slate-800 dark:text-slate-100"
-                          />
+                          <div className="flex items-center gap-2">
+                            <input 
+                              type="date" 
+                              value={auditPeriodStart}
+                              onChange={(e) => handleAuditPeriodStartChange(e.target.value)}
+                              className="bg-transparent border border-slate-200 dark:border-slate-800 rounded p-1 text-xs focus:outline-none text-slate-800 dark:text-slate-100 cursor-pointer"
+                            />
+                            <span className="text-slate-400 font-medium">to</span>
+                            <input 
+                              type="date" 
+                              value={auditPeriodEnd}
+                              onChange={(e) => handleAuditPeriodEndChange(e.target.value)}
+                              className="bg-transparent border border-slate-200 dark:border-slate-800 rounded p-1 text-xs focus:outline-none text-slate-800 dark:text-slate-100 cursor-pointer"
+                            />
+                          </div>
                         </td>
                         <td colSpan={2} className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold text-slate-500 italic">
                           For OPE information only

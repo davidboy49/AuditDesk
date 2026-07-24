@@ -38,7 +38,7 @@ export interface AuditProject {
   id: string;
   name: string;
   code: string;
-  status: "PLANNING" | "SUBMITTED_FOR_APPROVAL" | "RELEASED";
+  status: "PLANNING" | "SUBMITTED_FOR_APPROVAL" | "RELEASED" | "CLOSED";
   workflowStage: "DRAFTING" | "REVIEW" | "PENDING_PIC" | "APPROVED";
   deptPicIds: string; // Comma-separated list of User IDs representing department PICs
   departments: string; // Comma-separated list of Department names
@@ -75,6 +75,7 @@ export interface AuditProject {
     createdAt?: string;
   }[];
   executionSchedules?: { id: string; visitNumber: string; language: string; status?: string; departments: string; ownerName?: string; lastModifiedBy?: string; attendeeConfirmations?: string; scheduleRows?: string }[];
+  openMeetings?: OpenMeeting[];
 }
 
 export interface Finding {
@@ -111,6 +112,7 @@ export interface ScheduleRow {
 export interface ExecutionSchedule {
   id: string;
   projectId: string;
+  openMeetingId?: string | null;
   projectName?: string;
   projectCode?: string;
   departments: string;
@@ -133,6 +135,35 @@ export interface ExecutionSchedule {
   lastModifiedBy?: string;
   qrToken?: string;
   departmentConsents?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface OpenMeeting {
+  id: string;
+  projectId: string;
+  projectName?: string;
+  projectCode?: string;
+  departments: string;
+  address: string;
+  visitNumber: string;
+  actualVisitDate: string;
+  auditPeriod: string;
+  leadExecution: string;
+  teamMembers: string;
+  additionalAttendees: string;
+  attendeeConfirmations?: string;
+  standards: string;
+  status: "DRAFT" | "RELEASED";
+  objectives: string;
+  scope: string;
+  scheduleRows: string; // JSON
+  attachments?: string; // JSON
+  ownerName?: string;
+  lastModifiedBy?: string;
+  qrToken?: string;
+  departmentConsents?: string;
+  isDeleted?: boolean;
   createdAt?: string;
   updatedAt?: string;
 }

@@ -78,6 +78,7 @@ model AuditProject {
   attachments        Attachment[]
   auditors           User[]              @relation("ProjectAuditors")
   executionSchedules ExecutionSchedule[]
+  openMeetings       OpenMeeting[]
 }
 
 model Attachment {
@@ -132,31 +133,64 @@ model Report {
 }
 
 model ExecutionSchedule {
-  id                  String       @id @default(uuid())
-  projectId           String
-  project             AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  departments         String       @default("")
-  address             String
-  visitNumber         String       @default("01")
-  actualVisitDate     String
-  auditPeriod         String
-  leadExecution       String
-  teamMembers         String       @default("") // Comma-separated list of names
-  additionalAttendees String       @default("")
-  attendeeConfirmations String     @default("{}")
-  standards           String       @default("Work Procedure, work instruction, and policy")
-  language            String       @default("English")
-  status              String       @default("DRAFT")
-  objectives          String       @default("")
-  scope               String       @default("")
-  scheduleRows        String // JSON serialized rows: [{date, time, activity, conductBy, pIncharge}]
-  attachments         String       @default("[]") // JSON serialized array of attachments
-  ownerName           String       @default("Sarah Jenkins")
-  lastModifiedBy      String       @default("Sarah Jenkins")
-  qrToken             String       @default(uuid())
-  departmentConsents  String       @default("{}") // JSON serialized: { [deptId]: { status, acceptedByUserId, acceptedByUserName, acceptedByUserEmail, timestamp, comments } }
-  createdAt           DateTime     @default(now())
-  updatedAt           DateTime     @updatedAt
+  id                    String       @id @default(uuid())
+  projectId             String
+  project               AuditProject @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  openMeetingId         String?      @unique
+  openMeeting           OpenMeeting? @relation(fields: [openMeetingId], references: [id], onDelete: SetNull)
+  departments           String       @default("")
+  address               String
+  visitNumber           String       @default("01")
+  actualVisitDate       String
+  auditPeriod           String
+  leadExecution         String
+  teamMembers           String       @default("") // Comma-separated list of names
+  additionalAttendees   String       @default("")
+  attendeeConfirmations String       @default("{}")
+  standards             String       @default("Work Procedure, work instruction, and policy")
+  language              String       @default("English")
+  status                String       @default("DRAFT")
+  objectives            String       @default("")
+  scope                 String       @default("")
+  departmentConcern     String       @default("")
+  scheduleRows          String // JSON serialized rows: [{date, time, activity, conductBy, pIncharge}]
+  attachments           String       @default("[]") // JSON serialized array of attachments
+  ownerName             String       @default("Sarah Jenkins")
+  lastModifiedBy        String       @default("Sarah Jenkins")
+  qrToken               String       @default(uuid())
+  departmentConsents    String       @default("{}") // JSON serialized: { [deptId]: { status, acceptedByUserId, acceptedByUserName, acceptedByUserEmail, timestamp, comments } }
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+}
+
+model OpenMeeting {
+  id                    String             @id @default(uuid())
+  projectId             String
+  project               AuditProject       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  executionSchedule     ExecutionSchedule?
+  departments           String             @default("")
+  address               String             @default("HQ Main Conference Room / Virtual Meeting")
+  visitNumber           String             @default("01")
+  actualVisitDate       String
+  auditPeriod           String
+  leadExecution         String
+  teamMembers           String             @default("") // Comma-separated list of names
+  additionalAttendees   String             @default("")
+  attendeeConfirmations String             @default("{}")
+  standards             String             @default("Work Procedure, work instruction, and policy")
+  status                String             @default("DRAFT")
+  objectives            String             @default("")
+  scope                 String             @default("")
+  departmentConcern     String             @default("")
+  scheduleRows          String // JSON serialized rows: [{date, time, activity, conductBy, pIncharge}]
+  attachments           String             @default("[]") // JSON serialized array of attachments
+  ownerName             String             @default("Sarah Jenkins")
+  lastModifiedBy        String             @default("Sarah Jenkins")
+  qrToken               String             @default(uuid())
+  departmentConsents    String             @default("{}") // JSON serialized: { [deptId]: { status, acceptedByUserId, acceptedByUserName, acceptedByUserEmail, timestamp, comments } }
+  isDeleted             Boolean            @default(false)
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
 }
 
 model ActivityLog {
@@ -192,4 +226,3 @@ model DocumentSequence {
   currentVal Int      @default(0)
   updatedAt  DateTime @updatedAt
 }
-

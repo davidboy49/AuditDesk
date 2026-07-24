@@ -215,7 +215,7 @@ export default function FindingsClient({
   const isProjectMember = (proj: any) => {
     if (!proj) return false;
     if (currentUser.role === "ADMIN") return true;
-    if (proj.leadAuditorId === currentUser.id) return true;
+    if (proj.leadAuditorId === currentUser.id || proj.leadAuditorId === currentUser.name) return true;
     const auditorsList = proj.auditorNames ? proj.auditorNames.split(",").map((s: string) => s.trim()) : [];
     if (auditorsList.includes(currentUser.name)) return true;
     if (proj.auditorIds?.includes(currentUser.id)) return true;
@@ -272,7 +272,7 @@ export default function FindingsClient({
     setTeamMembers(auditorNames);
 
     const picNames = users
-      .filter(u => proj.deptPicIds?.split(",").includes(u.id))
+      .filter(u => proj.deptPicIds?.split(",").map((s: string) => s.trim()).includes(u.id) || proj.deptPicIds?.split(",").map((s: string) => s.trim()).includes(u.name))
       .map(u => u.name)
       .join(", ") || "";
     setAdditionalAttendees(picNames);
@@ -818,7 +818,7 @@ export default function FindingsClient({
                         className="w-full bg-transparent border-none p-0 text-xs focus:outline-none cursor-pointer text-slate-800 dark:text-slate-200 font-sans font-bold"
                       >
                         <option value="">Choose Audit Plan...</option>
-                        {projects.filter(isProjectMember).map(p => (
+                        {projects.filter(p => isProjectMember(p) && p.status !== "CLOSED").map(p => (
                           <option key={p.id} value={p.id} className="bg-white dark:bg-slate-900">
                             {p.code} - {p.name} ({p.status})
                           </option>

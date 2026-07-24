@@ -5,7 +5,7 @@ import MeetingsClient from "./meetings-client";
 export default async function MeetingsPage() {
   const currentUser = await getCurrentUserServer();
   const projects = await dbService.getProjects();
-  const schedules = await dbService.getExecutionSchedules();
+  const schedules = await dbService.getOpenMeetings();
   const users = await dbService.getUsers();
   const departments = await dbService.getDepartments();
 

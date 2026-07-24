@@ -26,19 +26,23 @@ interface ScanClientProps {
   currentUser: any;
   departmentsList: any[];
   qrToken: string;
+  projectMeetingsList?: any[];
 }
 
 export default function ScanClient({
   schedule: initialSchedule,
   currentUser,
   departmentsList,
-  qrToken
+  qrToken,
+  projectMeetingsList = []
 }: ScanClientProps) {
   const [schedule, setSchedule] = useState(initialSchedule);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [remarks, setRemarks] = useState("");
   const [consentStatus, setConsentStatus] = useState<"ACCEPTED" | "REVISION_REQUESTED">("ACCEPTED");
   const [submitSuccess, setSubmitSuccess] = useState(false);
+
+  const meetingsToUse = projectMeetingsList && projectMeetingsList.length > 0 ? projectMeetingsList : [schedule];
 
   // Parse Schedule Rows & Departments
   let scheduleRows: any[] = [];
@@ -55,10 +59,17 @@ export default function ScanClient({
     consents = {};
   }
 
+  const allConsents: Record<string, any> = {};
+  meetingsToUse.forEach(m => {
+    try {
+      const c = typeof m.departmentConsents === "string" ? JSON.parse(m.departmentConsents) : m.departmentConsents || {};
+      Object.assign(allConsents, c);
+    } catch (e) {}
+  });
+
   // Determine Available Departments for this schedule
-  const availableDeptsRaw: string[] = (schedule.departments || "")
-    .split(",")
-    .map((d: string) => d.trim())
+  const availableDeptsRaw: string[] = meetingsToUse
+    .map((m: any) => m.departments)
     .filter(Boolean);
 
   // Map user department
@@ -72,6 +83,14 @@ export default function ScanClient({
     : (availableDeptsRaw.find(d => d.toLowerCase() === userDeptName.toLowerCase()) || availableDeptsRaw[0] || userDeptName);
 
   const [selectedDept, setSelectedDept] = useState<string>(defaultSelectedDept);
+
+  const selectDepartment = (dept: string) => {
+    setSelectedDept(dept);
+    const matchingMeeting = meetingsToUse.find(m => m.departments === dept);
+    if (matchingMeeting) {
+      setSchedule(matchingMeeting);
+    }
+  };
 
   // Filter schedule rows matching selected department (or show all if matches conductBy / pIncharge)
   const scopedScheduleRows = scheduleRows.filter((row: any) => {
@@ -203,14 +222,14 @@ export default function ScanClient({
             {availableDeptsRaw.length > 0 ? (
               availableDeptsRaw.map((deptName) => {
                 const isSelected = selectedDept.toLowerCase() === deptName.toLowerCase();
-                const deptConsent = consents[deptName];
+                const deptConsent = allConsents[deptName];
                 const isAccepted = deptConsent?.status === "ACCEPTED";
                 const isRevision = deptConsent?.status === "REVISION_REQUESTED";
 
                 return (
                   <button
                     key={deptName}
-                    onClick={() => setSelectedDept(deptName)}
+                    onClick={() => selectDepartment(deptName)}
                     className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-medium transition-all ${
                       isSelected
                         ? "bg-indigo-600 text-white shadow-lg shadow-indigo-600/30 border border-indigo-400"
@@ -238,7 +257,7 @@ export default function ScanClient({
               })
             ) : (
               <button
-                onClick={() => setSelectedDept("General")}
+                onClick={() => selectDepartment("General")}
                 className="px-4 py-2 rounded-xl bg-indigo-600 text-white text-xs font-medium"
               >
                 General Department Scope
@@ -274,6 +293,16 @@ export default function ScanClient({
                     {schedule.scope || `Covers operational procedures, execution logs, document trails, system permissions, and sample verification for the target period.`}
                   </p>
                 </div>
+
+                {schedule.departmentConcern && (
+                  <div>
+                    <h4 className="font-semibold text-slate-200 mb-1 text-xs">The Concern of the Department Owner:</h4>
+                    <div 
+                      className="bg-slate-950/60 p-3 rounded-xl border border-slate-800/80 text-slate-300 rich-text-content"
+                      dangerouslySetInnerHTML={{ __html: schedule.departmentConcern }}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 

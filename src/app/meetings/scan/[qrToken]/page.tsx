@@ -13,7 +13,7 @@ interface PageProps {
 
 export default async function ScanPage({ params }: PageProps) {
   const { qrToken } = await params;
-  const { schedule, currentUser, departments } = await getOpenMeetingByQrAction(qrToken);
+  const { schedule, currentUser, departments, projectMeetings } = await getOpenMeetingByQrAction(qrToken);
 
   if (!schedule) {
     notFound();
@@ -25,6 +25,7 @@ export default async function ScanPage({ params }: PageProps) {
       currentUser={currentUser} 
       departmentsList={departments} 
       qrToken={qrToken}
+      projectMeetingsList={projectMeetings || []}
     />
   );
 }

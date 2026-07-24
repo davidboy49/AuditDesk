@@ -25,15 +25,15 @@ import {
 import { 
   User, 
   AuditProject, 
-  ExecutionSchedule, 
+  OpenMeeting, 
   ScheduleRow,
   Department 
 } from "@/lib/mockData";
 import { 
-  createExecutionScheduleAction, 
-  updateExecutionScheduleAction, 
-  deleteExecutionScheduleAction,
-  getExecutionSchedulesAction,
+  createOpenMeetingAction, 
+  updateOpenMeetingAction, 
+  deleteOpenMeetingAction,
+  getOpenMeetingsAction,
   sendMeetingReleaseNotificationAction
 } from "@/app/actions";
 import ActionToolbar from "@/components/ui/action-toolbar";
@@ -124,7 +124,7 @@ const pruneConfirmations = (attendeeNames: string[], confirmations: Record<strin
 };
 
 interface MeetingsClientProps {
-  initialSchedules: ExecutionSchedule[];
+  initialSchedules: OpenMeeting[];
   projects: AuditProject[];
   users: User[];
   departments: Department[];
@@ -138,7 +138,7 @@ export default function MeetingsClient({
   departments,
   currentUser 
 }: MeetingsClientProps) {
-  const [schedules, setSchedules] = useState<ExecutionSchedule[]>(initialSchedules.filter(s => s.language === "meeting"));
+  const [schedules, setSchedules] = useState<OpenMeeting[]>(initialSchedules);
   
   // Search/Filters
   const [searchQuery, setSearchQuery] = useState("");
@@ -162,6 +162,7 @@ export default function MeetingsClient({
   const [standards, setStandards] = useState("Meeting Alignment Agenda");
   const [objectives, setObjectives] = useState("");
   const [scope, setScope] = useState("");
+  const [departmentConcern, setDepartmentConcern] = useState("");
   const [attachments, setAttachments] = useState<any[]>([]);
   const [rows, setRows] = useState<ScheduleRow[]>([]);
   const [meetingStatus, setMeetingStatus] = useState<"DRAFT" | "RELEASED">("DRAFT");
@@ -239,7 +240,7 @@ export default function MeetingsClient({
   const isProjectMember = (proj: any) => {
     if (!proj) return false;
     if (currentUser.role === "ADMIN") return true;
-    if (proj.leadAuditorId === currentUser.id) return true;
+    if (proj.leadAuditorId === currentUser.id || proj.leadAuditorId === currentUser.name) return true;
     const auditorsList = proj.auditorNames ? proj.auditorNames.split(",").map((s: string) => s.trim()) : [];
     if (auditorsList.includes(currentUser.name)) return true;
     if (proj.auditorIds?.includes(currentUser.id)) return true;
@@ -266,6 +267,11 @@ export default function MeetingsClient({
   // Prepopulate schedule fields when project is selected in Create mode
   const handleProjectSelect = (projId: string) => {
     setSelectedProjectId(projId);
+    const proj = projects.find(p => p.id === projId);
+    if (proj) {
+      setObjectives(proj.objectives || "");
+      setScope(proj.scope || "");
+    }
   };
 
   const openCreateModal = () => {
@@ -283,6 +289,7 @@ export default function MeetingsClient({
     setStandards("");
     setObjectives("");
     setScope("");
+    setDepartmentConcern("");
     setRows([]);
     setAttachments([]);
     setMeetingStatus("DRAFT");
@@ -290,7 +297,7 @@ export default function MeetingsClient({
     setIsModalOpen(true);
   };
 
-  const openEditModal = (sched: ExecutionSchedule) => {
+  const openEditModal = (sched: OpenMeeting) => {
     setModalMode("edit");
     setSelectedProjectId(sched.projectId);
     setDepartmentsStr(sched.departments);
@@ -306,6 +313,7 @@ export default function MeetingsClient({
     setAttendeeConfirmations(parseAttendeeConfirmations(sched.attendeeConfirmations));
     setObjectives(sched.objectives);
     setScope(sched.scope);
+    setDepartmentConcern((sched as any).departmentConcern || "");
     setAttachments(sched.attachments ? JSON.parse(sched.attachments) : []);
     
     try {
@@ -355,10 +363,10 @@ export default function MeetingsClient({
       additionalAttendees,
       attendeeConfirmations: JSON.stringify(pruneConfirmations(additionalAttendeesArray, attendeeConfirmations)),
       standards,
-      language: "meeting",
       status: targetStatus,
       objectives,
       scope,
+      departmentConcern,
       scheduleRows: JSON.stringify(rows),
       attachments: JSON.stringify(attachments),
       ownerName: modalMode === "create" ? currentUser.name : (schedules.find(x => x.id === selectedScheduleId)?.ownerName || currentUser.name),
@@ -371,21 +379,21 @@ export default function MeetingsClient({
       const notifyRelease = options.sendReleaseNotification ?? false;
 
       if (modalMode === "create") {
-        const result = await createExecutionScheduleAction(payload);
+        const result = await createOpenMeetingAction(payload);
         if (!result) return false;
         savedId = result.id || savedId;
         setSelectedScheduleId(savedId || null);
         setMeetingStatus(targetStatus);
       } else {
         if (!selectedScheduleId) return false;
-        const result = await updateExecutionScheduleAction(selectedScheduleId, payload);
+        const result = await updateOpenMeetingAction(selectedScheduleId, payload);
         if (!result) return false;
         savedId = result.id || savedId;
         setMeetingStatus(targetStatus);
       }
 
-      const fresh = await getExecutionSchedulesAction();
-      setSchedules(fresh.filter((s: any) => s.language === "meeting"));
+      const fresh = await getOpenMeetingsAction();
+      setSchedules(fresh);
 
       if (targetStatus === "RELEASED" && savedId && notifyRelease) {
         await sendMeetingReleaseNotificationAction(savedId);
@@ -446,15 +454,15 @@ export default function MeetingsClient({
     });
 
     try {
-      const result = await updateExecutionScheduleAction(selectedScheduleId, {
+      const result = await updateOpenMeetingAction(selectedScheduleId, {
         attendeeConfirmations: JSON.stringify(nextConfirmations),
         lastModifiedBy: currentUser.name
       });
 
       if (result) {
         setAttendeeConfirmations(nextConfirmations);
-        const fresh = await getExecutionSchedulesAction();
-        setSchedules(fresh.filter((s: any) => s.language === "meeting"));
+        const fresh = await getOpenMeetingsAction();
+        setSchedules(fresh);
         showFeedback(`${attendeeName} confirmed attendance.`);
       }
     } catch (err: any) {
@@ -466,14 +474,14 @@ export default function MeetingsClient({
   const handleReopenSchedule = async () => {
     if (!selectedScheduleId) return;
     try {
-      const result = await updateExecutionScheduleAction(selectedScheduleId, {
+      const result = await updateOpenMeetingAction(selectedScheduleId, {
         status: "DRAFT",
         lastModifiedBy: currentUser.name
       });
       if (result) {
         setMeetingStatus("DRAFT");
-        const fresh = await getExecutionSchedulesAction();
-        setSchedules(fresh.filter((s: any) => s.language === "meeting"));
+        const fresh = await getOpenMeetingsAction();
+        setSchedules(fresh);
         showFeedback("Meeting record reopened for editing.");
       }
     } catch (err: any) {
@@ -492,12 +500,12 @@ export default function MeetingsClient({
       `Are you sure you want to delete the meeting record for "${s.projectName}"? This action cannot be undone.`,
       async () => {
         try {
-          const success = await deleteExecutionScheduleAction(selectedScheduleId);
+          const success = await deleteOpenMeetingAction(selectedScheduleId);
           if (success) {
             showFeedback("Meeting record removed from ledger.");
             setSelectedScheduleId(null);
-            const fresh = await getExecutionSchedulesAction();
-            setSchedules(fresh.filter((s: any) => s.language === "meeting"));
+            const fresh = await getOpenMeetingsAction();
+            setSchedules(fresh);
           }
         } catch (err: any) {
           console.error(err);
@@ -659,13 +667,12 @@ export default function MeetingsClient({
                   <th className="px-6 py-4">Meeting Date</th>
                   <th className="px-6 py-4">Facilitator</th>
                   <th className="px-6 py-4">Status</th>
-                  <th className="px-6 py-4 text-center">QR Code</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
                 {filteredSchedules.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-8 text-center text-slate-400 italic">
+                    <td colSpan={6} className="px-6 py-8 text-center text-slate-400 italic">
                       No meetings matched filters or none have been created. Click "+" above to create a meeting alignment record.
                     </td>
                   </tr>
@@ -704,25 +711,6 @@ export default function MeetingsClient({
                         <span className={`inline-flex items-center rounded-full px-2 py-1 text-[10px] font-bold ${s.status === "RELEASED" ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300" : "bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300"}`}>
                           {s.status === "RELEASED" ? "Released" : "Draft"}
                         </span>
-                      </td>
-                      <td className="px-6 py-4.5 text-center">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setQrModalData({
-                              qrToken: s.qrToken || s.id,
-                              projectTitle: s.projectName || "Audit Open Meeting",
-                              projectCode: s.projectCode || "AP-2026",
-                              departments: s.departments || "All Departments"
-                            });
-                            setQrModalOpen(true);
-                          }}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded bg-indigo-50 dark:bg-indigo-950/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-[11px] font-medium transition-colors"
-                          title="View Universal QR Code for Open Meeting Scope Consent"
-                        >
-                          <QrCode className="w-3.5 h-3.5 text-indigo-500" /> QR
-                        </button>
                       </td>
                     </tr>
                   ))
@@ -779,22 +767,6 @@ export default function MeetingsClient({
 
               {/* Actions Header Bar */}
               <div className="flex items-center gap-2.5 shrink-0 no-print">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const proj = projects.find(p => p.id === selectedProjectId);
-                    setQrModalData({
-                      qrToken: activeSchedule?.qrToken || activeSchedule?.id || selectedProjectId || "AP-2026",
-                      projectTitle: proj?.name || "Audit Open Meeting Alignment",
-                      projectCode: proj?.code || "AP-2026",
-                      departments: departmentsStr || proj?.departments || "All Departments"
-                    });
-                    setQrModalOpen(true);
-                  }}
-                  className="flex items-center gap-1.5 px-3 py-2 border border-indigo-500/40 bg-indigo-50 dark:bg-indigo-950/40 hover:bg-indigo-100 dark:hover:bg-indigo-900/60 text-indigo-700 dark:text-indigo-300 text-xs font-bold rounded cursor-pointer transition-colors shadow-sm"
-                >
-                  <QrCode className="w-4 h-4 text-indigo-500" /> Universal QR Code
-                </button>
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -859,7 +831,7 @@ export default function MeetingsClient({
                           className="w-full bg-transparent border-none p-0 text-xs focus:outline-none cursor-pointer text-slate-800 dark:text-slate-200 font-roboto font-bold"
                         >
                           <option value="">Choose Audit Plan...</option>
-                          {projects.filter(isProjectMember).map(p => (
+                          {projects.filter(p => isProjectMember(p) && p.status !== "CLOSED").map(p => (
                             <option key={p.id} value={p.id} className="bg-white dark:bg-slate-900">
                               {p.code} - {p.name}
                             </option>
@@ -883,18 +855,23 @@ export default function MeetingsClient({
                       {/* Row 1: Department */}
                       <tr className="border-b border-slate-300 dark:border-slate-800/80">
                         <td className="w-1/4 px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300 align-top">
-                          Department(s):
+                          Department:
                         </td>
                         <td colSpan={3} className="px-4 py-2">
-                          <MultiSelect
-                            selectedValues={departmentsArray}
-                            onChange={setDepartmentsArray}
-                            options={departments.map(d => ({
-                              value: d.name,
-                              label: d.name
-                            }))}
-                            placeholder="Select Department(s)..."
-                          />
+                          <select
+                            required
+                            disabled={isLocked}
+                            value={departmentsStr}
+                            onChange={(e) => setDepartmentsStr(e.target.value)}
+                            className="w-full bg-transparent border border-slate-205 dark:border-slate-800 rounded px-2.5 py-1.5 text-xs focus:outline-none cursor-pointer text-slate-850 dark:text-slate-200 font-bold"
+                          >
+                            <option value="">Select Department...</option>
+                            {departments.map(d => (
+                              <option key={d.id} value={d.name} className="bg-white dark:bg-slate-900">
+                                {d.name}
+                              </option>
+                            ))}
+                          </select>
                         </td>
                       </tr>
                       {/* Row 3: Visit Number + Actual Visit Date */}
@@ -994,7 +971,7 @@ export default function MeetingsClient({
                       {/* Row 10: OPE Objectives */}
                       <tr className="border-b border-slate-300 dark:border-slate-800/80">
                         <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300 align-top">
-                          Objective and Scope:
+                          Objective:
                         </td>
                         <td colSpan={3} className="px-4 py-3">
                           <RichEditor 
@@ -1008,15 +985,31 @@ export default function MeetingsClient({
                       </tr>
 
                       {/* Row 11: OPE Scope */}
-                      <tr>
+                      <tr className="border-b border-slate-300 dark:border-slate-800/80">
                         <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300 align-top">
-                         The Concern of the Department Owner:
+                          Audit Scope:
                         </td>
                         <td colSpan={3} className="px-4 py-3">
                           <RichEditor 
                             value={scope}
                             onChange={setScope}
                             placeholder="Functional scope of the alignment..."
+                            editorClassName="min-h-[120px] max-h-[250px]"
+                            editable={!isLocked}
+                          />
+                        </td>
+                      </tr>
+
+                      {/* Row 12: Department Concern */}
+                      <tr>
+                        <td className="px-4 py-3 bg-slate-50 dark:bg-slate-900/60 font-bold border-r border-slate-300 dark:border-slate-800/80 text-slate-700 dark:text-slate-300 align-top">
+                          The Concern of the Department Owner:
+                        </td>
+                        <td colSpan={3} className="px-4 py-3">
+                          <RichEditor 
+                            value={departmentConcern}
+                            onChange={setDepartmentConcern}
+                            placeholder="Add concerns of the department owner..."
                             editorClassName="min-h-[120px] max-h-[250px]"
                             editable={!isLocked}
                           />

@@ -1,4 +1,5 @@
 import prisma from "./db";
+import type { Prisma } from "../generated/prisma/client";
 import { generateDocumentCode } from "./codeGenerator";
 import { User, Department, UserGroup, UserRole, AuditProject, Finding, Attachment } from "./mockData";
 const getScheduleAttendeeConfirmations = async (ids: string[]) => {
@@ -25,6 +26,13 @@ const updateScheduleAttendeeConfirmations = async (id: string, attendeeConfirmat
 
 
 export const dbService = {
+  async assertProjectNotClosed(projectId?: string): Promise<void> {
+    if (!projectId) return;
+    const proj = await prisma.auditProject.findUnique({ where: { id: projectId } });
+    if (proj && proj.status === "CLOSED") {
+      throw new Error("This Audit Plan is CLOSED. No modifications or new records can be linked to a closed audit plan.");
+    }
+  },
   // Departments
   async getDepartments(): Promise<Department[]> {
     return prisma.department.findMany({
@@ -181,7 +189,10 @@ export const dbService = {
             auditor: true
           }
         },
-        executionSchedules: true
+        executionSchedules: true,
+        openMeetings: {
+          where: { isDeleted: false }
+        }
       },
       orderBy: { code: "asc" }
     });
@@ -230,6 +241,29 @@ export const dbService = {
         lastModifiedBy: e.lastModifiedBy,
         scheduleRows: e.scheduleRows,
         attendeeConfirmations: e.attendeeConfirmations
+      })),
+      openMeetings: p.openMeetings.map(m => ({
+        id: m.id,
+        projectId: m.projectId,
+        departments: m.departments,
+        address: m.address,
+        visitNumber: m.visitNumber,
+        actualVisitDate: m.actualVisitDate,
+        auditPeriod: m.auditPeriod,
+        leadExecution: m.leadExecution,
+        teamMembers: m.teamMembers,
+        additionalAttendees: m.additionalAttendees,
+        attendeeConfirmations: m.attendeeConfirmations,
+        standards: m.standards,
+        status: m.status as any,
+        objectives: m.objectives,
+        scope: m.scope,
+        scheduleRows: m.scheduleRows,
+        attachments: m.attachments,
+        ownerName: m.ownerName,
+        lastModifiedBy: m.lastModifiedBy,
+        qrToken: m.qrToken,
+        departmentConsents: m.departmentConsents
       })),
       attachments: p.attachments.map(a => ({
         id: a.id,
@@ -392,15 +426,24 @@ export const dbService = {
             auditor: true
           }
         },
-        executionSchedules: true
+        executionSchedules: true,
+        openMeetings: {
+          where: { isDeleted: false }
+        }
       }
     });
 
+    let finalSchedules = p.executionSchedules;
+    let finalOpenMeetings = p.openMeetings;
+
     if (updates.status === "RELEASED") {
       try {
-        await this.ensureExecutionScheduleForProject(id);
+        await this.ensureOpenMeetingsForProject(id);
+        finalOpenMeetings = await prisma.openMeeting.findMany({
+          where: { projectId: id, isDeleted: false }
+        });
       } catch (err) {
-        console.error("Failed to auto-create execution schedule on release:", err);
+        console.error("Failed to auto-create open meetings on release:", err);
       }
     }
 
@@ -439,7 +482,7 @@ export const dbService = {
         auditorName: f.auditor?.name,
         createdAt: f.createdAt.toISOString()
       })),
-      executionSchedules: p.executionSchedules.map(e => ({
+      executionSchedules: finalSchedules.map(e => ({
         id: e.id,
         visitNumber: e.visitNumber,
         language: e.language,
@@ -449,6 +492,29 @@ export const dbService = {
         lastModifiedBy: e.lastModifiedBy,
         scheduleRows: e.scheduleRows,
         attendeeConfirmations: e.attendeeConfirmations
+      })),
+      openMeetings: finalOpenMeetings.map(m => ({
+        id: m.id,
+        projectId: m.projectId,
+        departments: m.departments,
+        address: m.address,
+        visitNumber: m.visitNumber,
+        actualVisitDate: m.actualVisitDate,
+        auditPeriod: m.auditPeriod,
+        leadExecution: m.leadExecution,
+        teamMembers: m.teamMembers,
+        additionalAttendees: m.additionalAttendees,
+        attendeeConfirmations: m.attendeeConfirmations,
+        standards: m.standards,
+        status: m.status as any,
+        objectives: m.objectives,
+        scope: m.scope,
+        scheduleRows: m.scheduleRows,
+        attachments: m.attachments,
+        ownerName: m.ownerName,
+        lastModifiedBy: m.lastModifiedBy,
+        qrToken: m.qrToken,
+        departmentConsents: m.departmentConsents
       })),
       attachments: p.attachments.map(a => ({
         id: a.id,
@@ -497,6 +563,7 @@ export const dbService = {
     }));
   },
   async createFinding(title: string, description: string, severity: any, status: any, recommendation: string, projectId: string, auditorId: string): Promise<Finding> {
+    await this.assertProjectNotClosed(projectId);
     const f = await prisma.finding.create({
       data: {
         title,
@@ -575,6 +642,7 @@ export const dbService = {
 
   // Attachments
   async addAttachment(projectId: string, fileName: string, fileSize: number, fileType: string, fileData: string): Promise<Attachment> {
+    await this.assertProjectNotClosed(projectId);
     const a = await prisma.attachment.create({
       data: {
         projectId,
@@ -613,6 +681,7 @@ export const dbService = {
     return schedules.map(s => ({
       id: s.id,
       projectId: s.projectId,
+      openMeetingId: s.openMeetingId,
       projectName: s.project.name,
       projectCode: s.project.code,
       departments: s.departments,
@@ -641,6 +710,7 @@ export const dbService = {
   },
   async createExecutionSchedule(data: {
     projectId: string;
+    openMeetingId?: string;
     departments: string;
     address: string;
     visitNumber: string;
@@ -662,6 +732,35 @@ export const dbService = {
     qrToken?: string;
     departmentConsents?: string;
   }): Promise<any> {
+    await this.assertProjectNotClosed(data.projectId);
+
+    if (data.language !== "finding") {
+      if (!data.openMeetingId) {
+        throw new Error("Select a released Open Meeting before creating an Execution Schedule.");
+      }
+
+      const sourceMeeting = await prisma.openMeeting.findFirst({
+        where: {
+          id: data.openMeetingId,
+          status: "RELEASED",
+          isDeleted: false
+        }
+      });
+      if (!sourceMeeting) {
+        throw new Error("Execution schedules can only be created from a released Open Meeting.");
+      }
+      if (sourceMeeting.projectId !== data.projectId) {
+        throw new Error("The selected Open Meeting does not belong to this Audit Plan.");
+      }
+
+      const existingSchedule = await prisma.executionSchedule.findUnique({
+        where: { openMeetingId: data.openMeetingId }
+      });
+      if (existingSchedule) {
+        throw new Error("An Execution Schedule has already been created from this Open Meeting.");
+      }
+    }
+
     const { attendeeConfirmations, ...createData } = data;
     const s = await prisma.executionSchedule.create({
       data: createData,
@@ -673,6 +772,7 @@ export const dbService = {
     return {
       id: s.id,
       projectId: s.projectId,
+      openMeetingId: s.openMeetingId,
       projectName: s.project.name,
       projectCode: s.project.code,
       departments: s.departments,
@@ -709,6 +809,7 @@ export const dbService = {
     return {
       id: s.id,
       projectId: s.projectId,
+      openMeetingId: s.openMeetingId,
       projectName: s.project?.name,
       projectCode: s.project?.code,
       departments: s.departments,
@@ -800,6 +901,420 @@ export const dbService = {
 
     return this.getExecutionSchedule(newSchedule.id);
   },
+  async ensureOpenMeetingsForProject(projectId: string): Promise<any[]> {
+    const project = await prisma.auditProject.findUnique({
+      where: { id: projectId }
+    });
+    if (!project) return [];
+
+    const deptsRaw = project.departments || "";
+    let deptList = deptsRaw.split(",").map(d => d.trim()).filter(Boolean);
+    if (deptList.length === 0) {
+      deptList = ["IT", "Finance", "Operations"];
+      await prisma.auditProject.update({
+        where: { id: projectId },
+        data: { departments: deptList.join(", ") }
+      });
+    }
+
+    const startDateStr = project.startDate ? project.startDate.toISOString().split("T")[0] : new Date().toISOString().split("T")[0];
+    const openMeetingsInDb = await prisma.openMeeting.findMany({
+      where: { projectId: projectId }
+    });
+
+    const createdMeetings: any[] = [];
+
+    for (const dept of deptList) {
+      const exists = openMeetingsInDb.some(m => 
+        m.departments && (m.departments === dept || m.departments.split(",").map(d => d.trim()).includes(dept))
+      );
+
+      if (!exists) {
+        const defaultAgendaRows = [
+          {
+            day: "Day 1",
+            date: startDateStr,
+            time: "09:00 AM - 09:30 AM",
+            activity: `Opening Meeting & Audit Scope Briefing for ${dept}`,
+            conductBy: project.auditorNames || "Lead Auditor",
+            pIncharge: dept
+          },
+          {
+            day: "Day 1",
+            date: startDateStr,
+            time: "09:30 AM - 10:30 AM",
+            activity: `Scope Alignment & Data Request Discussion for ${dept}`,
+            conductBy: project.auditorNames || "Audit Team",
+            pIncharge: dept
+          },
+          {
+            day: "Day 1",
+            date: startDateStr,
+            time: "10:30 AM - 11:00 AM",
+            activity: `Scope Consent & Attendance Confirmation for ${dept}`,
+            conductBy: project.auditorNames || "Audit Team",
+            pIncharge: dept
+          }
+        ];
+
+        const newMeeting = await prisma.openMeeting.create({
+          data: {
+            projectId: project.id,
+            departments: dept,
+            address: "HQ Main Conference Room / Virtual Meeting",
+            visitNumber: "01",
+            actualVisitDate: startDateStr,
+            auditPeriod: `${project.startDate ? new Date(project.startDate).toLocaleDateString("en-GB") : "Start"} - ${project.endDate ? new Date(project.endDate).toLocaleDateString("en-GB") : "End"}`,
+            leadExecution: project.auditorNames || "Lead Auditor",
+            teamMembers: project.auditorNames || "",
+            additionalAttendees: project.deptPicIds || "",
+            attendeeConfirmations: "{}",
+            standards: "Work Procedure, Work Instruction & Policy",
+            status: "DRAFT",
+            objectives: project.objectives || `Evaluate operational compliance and risk management for ${dept}.`,
+            scope: project.scope || `Full scope audit covering departmental procedures and key controls for ${dept}.`,
+            scheduleRows: JSON.stringify(defaultAgendaRows),
+            attachments: "[]",
+            ownerName: "Sarah Jenkins",
+            lastModifiedBy: "Sarah Jenkins",
+            qrToken: project.id,
+            departmentConsents: "{}"
+          }
+        });
+        createdMeetings.push(newMeeting);
+        openMeetingsInDb.push(newMeeting);
+      }
+    }
+
+    return createdMeetings;
+  },
+
+  // Open Meetings
+  async getOpenMeetings(): Promise<any[]> {
+    const meetings = await prisma.openMeeting.findMany({
+      where: { isDeleted: false },
+      include: { project: true },
+      orderBy: { createdAt: "desc" }
+    });
+
+    return meetings.map(m => ({
+      id: m.id,
+      projectId: m.projectId,
+      projectName: m.project?.name,
+      projectCode: m.project?.code,
+      departments: m.departments,
+      address: m.address,
+      visitNumber: m.visitNumber,
+      actualVisitDate: m.actualVisitDate,
+      auditPeriod: m.auditPeriod,
+      leadExecution: m.leadExecution,
+      teamMembers: m.teamMembers,
+      additionalAttendees: m.additionalAttendees,
+      attendeeConfirmations: m.attendeeConfirmations,
+      standards: m.standards,
+      status: m.status,
+      objectives: m.objectives,
+      scope: m.scope,
+      departmentConcern: m.departmentConcern,
+      scheduleRows: m.scheduleRows,
+      attachments: m.attachments,
+      ownerName: m.ownerName,
+      lastModifiedBy: m.lastModifiedBy,
+      qrToken: m.qrToken,
+      departmentConsents: m.departmentConsents,
+      isDeleted: m.isDeleted,
+      createdAt: m.createdAt.toISOString(),
+      updatedAt: m.updatedAt.toISOString()
+    }));
+  },
+  async getOpenMeetingsByProject(projectId: string): Promise<any[]> {
+    const meetings = await prisma.openMeeting.findMany({
+      where: { projectId, isDeleted: false },
+      include: { project: true },
+      orderBy: { createdAt: "asc" }
+    });
+    return meetings.map(m => ({
+      id: m.id,
+      projectId: m.projectId,
+      projectName: m.project?.name,
+      projectCode: m.project?.code,
+      departments: m.departments,
+      address: m.address,
+      visitNumber: m.visitNumber,
+      actualVisitDate: m.actualVisitDate,
+      auditPeriod: m.auditPeriod,
+      leadExecution: m.leadExecution,
+      teamMembers: m.teamMembers,
+      additionalAttendees: m.additionalAttendees,
+      attendeeConfirmations: m.attendeeConfirmations,
+      standards: m.standards,
+      status: m.status,
+      objectives: m.objectives,
+      scope: m.scope,
+      departmentConcern: m.departmentConcern,
+      scheduleRows: m.scheduleRows,
+      attachments: m.attachments,
+      ownerName: m.ownerName,
+      lastModifiedBy: m.lastModifiedBy,
+      qrToken: m.qrToken,
+      departmentConsents: m.departmentConsents,
+      isDeleted: m.isDeleted,
+      createdAt: m.createdAt.toISOString(),
+      updatedAt: m.updatedAt.toISOString()
+    }));
+  },
+
+  async getOpenMeeting(id: string): Promise<any> {
+    const m = await prisma.openMeeting.findUnique({
+      where: { id },
+      include: { project: true }
+    });
+    if (!m || m.isDeleted) return null;
+    return {
+      id: m.id,
+      projectId: m.projectId,
+      projectName: m.project?.name,
+      projectCode: m.project?.code,
+      departments: m.departments,
+      address: m.address,
+      visitNumber: m.visitNumber,
+      actualVisitDate: m.actualVisitDate,
+      auditPeriod: m.auditPeriod,
+      leadExecution: m.leadExecution,
+      teamMembers: m.teamMembers,
+      additionalAttendees: m.additionalAttendees,
+      attendeeConfirmations: m.attendeeConfirmations,
+      standards: m.standards,
+      status: m.status,
+      objectives: m.objectives,
+      scope: m.scope,
+      departmentConcern: m.departmentConcern,
+      scheduleRows: m.scheduleRows,
+      attachments: m.attachments,
+      ownerName: m.ownerName,
+      lastModifiedBy: m.lastModifiedBy,
+      qrToken: m.qrToken,
+      departmentConsents: m.departmentConsents,
+      isDeleted: m.isDeleted,
+      createdAt: m.createdAt.toISOString(),
+      updatedAt: m.updatedAt.toISOString()
+    };
+  },
+
+  async createOpenMeeting(data: any): Promise<any> {
+    await this.assertProjectNotClosed(data.projectId);
+    const m = await prisma.openMeeting.create({
+      data: {
+        projectId: data.projectId,
+        departments: data.departments,
+        address: data.address,
+        visitNumber: data.visitNumber,
+        actualVisitDate: data.actualVisitDate,
+        auditPeriod: data.auditPeriod,
+        leadExecution: data.leadExecution,
+        teamMembers: data.teamMembers,
+        additionalAttendees: data.additionalAttendees,
+        attendeeConfirmations: data.attendeeConfirmations || "{}",
+        standards: data.standards,
+        status: data.status || "DRAFT",
+        objectives: data.objectives,
+        scope: data.scope,
+        departmentConcern: data.departmentConcern || "",
+        scheduleRows: data.scheduleRows,
+        attachments: data.attachments || "[]",
+        ownerName: data.ownerName || "Sarah Jenkins",
+        lastModifiedBy: data.lastModifiedBy || "Sarah Jenkins",
+        qrToken: data.qrToken || data.projectId,
+        departmentConsents: data.departmentConsents || "{}"
+      },
+      include: { project: true }
+    });
+    return this.getOpenMeeting(m.id);
+  },
+
+  async updateOpenMeeting(id: string, data: any): Promise<any> {
+    const updateData: Prisma.OpenMeetingUpdateInput = {
+      departments: data.departments,
+      address: data.address,
+      visitNumber: data.visitNumber,
+      actualVisitDate: data.actualVisitDate,
+      auditPeriod: data.auditPeriod,
+      leadExecution: data.leadExecution,
+      teamMembers: data.teamMembers,
+      additionalAttendees: data.additionalAttendees,
+      attendeeConfirmations: data.attendeeConfirmations,
+      standards: data.standards,
+      status: data.status,
+      objectives: data.objectives,
+      scope: data.scope,
+      departmentConcern: data.departmentConcern,
+      scheduleRows: data.scheduleRows,
+      attachments: data.attachments,
+      ownerName: data.ownerName,
+      lastModifiedBy: data.lastModifiedBy
+    };
+
+    const m = await prisma.openMeeting.update({
+      where: { id },
+      data: updateData,
+      include: { project: true }
+    });
+    return this.getOpenMeeting(m.id);
+  },
+
+  async deleteOpenMeeting(id: string): Promise<boolean> {
+    await prisma.openMeeting.update({
+      where: { id },
+      data: { isDeleted: true }
+    });
+    return true;
+  },
+
+  async getOpenMeetingByQrToken(qrToken: string): Promise<any> {
+    let m = await prisma.openMeeting.findFirst({
+      where: {
+        isDeleted: false,
+        OR: [
+          { qrToken: qrToken },
+          { id: qrToken },
+          { projectId: qrToken },
+          { project: { code: qrToken } }
+        ]
+      },
+      include: { project: true }
+    });
+
+    if (!m) {
+      const matchingProject = await prisma.auditProject.findFirst({
+        where: {
+          OR: [
+            { code: qrToken },
+            { id: qrToken }
+          ]
+        }
+      });
+      if (matchingProject) {
+        await this.ensureOpenMeetingsForProject(matchingProject.id);
+        m = await prisma.openMeeting.findFirst({
+          where: { projectId: matchingProject.id, isDeleted: false },
+          include: { project: true }
+        });
+      }
+      if (!m) {
+        return this.getExecutionScheduleByQrToken(qrToken);
+      }
+    }
+
+    let mergedDepartments = m.departments;
+    let mergedConsents: Record<string, any> = {};
+    try {
+      mergedConsents = JSON.parse((m as any).departmentConsents || "{}");
+    } catch {
+      mergedConsents = {};
+    }
+
+    if (m.projectId) {
+      const siblingMeetings = await prisma.openMeeting.findMany({
+        where: { projectId: m.projectId }
+      });
+
+      if (m.project?.departments) {
+        mergedDepartments = m.project.departments;
+      } else {
+        const deptSet = new Set<string>();
+        siblingMeetings.forEach(sib => {
+          (sib.departments || "").split(",").forEach(d => {
+            const clean = d.trim();
+            if (clean) deptSet.add(clean);
+          });
+        });
+        if (deptSet.size > 0) mergedDepartments = Array.from(deptSet).join(", ");
+      }
+
+      for (const sib of siblingMeetings) {
+        try {
+          const sibConsents = JSON.parse((sib as any).departmentConsents || "{}");
+          Object.assign(mergedConsents, sibConsents);
+        } catch {
+          // ignore invalid json
+        }
+      }
+    }
+
+    return {
+      id: m.id,
+      projectId: m.projectId,
+      projectName: m.project?.name,
+      projectCode: m.project?.code,
+      departments: mergedDepartments,
+      address: m.address,
+      visitNumber: m.visitNumber,
+      actualVisitDate: m.actualVisitDate,
+      auditPeriod: m.auditPeriod,
+      leadExecution: m.leadExecution,
+      teamMembers: m.teamMembers,
+      additionalAttendees: m.additionalAttendees,
+      attendeeConfirmations: m.attendeeConfirmations ?? "{}",
+      standards: m.standards,
+      status: m.status,
+      objectives: m.objectives,
+      scope: m.scope,
+      scheduleRows: m.scheduleRows,
+      attachments: m.attachments,
+      ownerName: m.ownerName,
+      lastModifiedBy: m.lastModifiedBy,
+      qrToken: (m as any).qrToken ?? m.id,
+      departmentConsents: JSON.stringify(mergedConsents),
+      createdAt: m.createdAt.toISOString(),
+      updatedAt: m.updatedAt.toISOString()
+    };
+  },
+
+  async updateOpenMeetingDepartmentConsent(meetingId: string, departmentId: string, consentObj: { status: string; acceptedByUserId: string; acceptedByUserName: string; acceptedByUserEmail: string; timestamp: string; comments?: string }): Promise<any> {
+    let m = await prisma.openMeeting.findUnique({ where: { id: meetingId } });
+    if (!m) {
+      return this.updateDepartmentConsent(meetingId, departmentId, consentObj);
+    }
+    
+    let consents: Record<string, any> = {};
+    try {
+      consents = JSON.parse((m as any).departmentConsents || "{}");
+    } catch {
+      consents = {};
+    }
+    
+    consents[departmentId] = consentObj;
+    
+    const updated = await prisma.openMeeting.update({
+      where: { id: meetingId },
+      data: {
+        departmentConsents: JSON.stringify(consents)
+      },
+      include: { project: true }
+    });
+
+    if (m.projectId) {
+      const siblingMeetings = await prisma.openMeeting.findMany({
+        where: { projectId: m.projectId, NOT: { id: meetingId } }
+      });
+      for (const sib of siblingMeetings) {
+        let sibConsents: Record<string, any> = {};
+        try { sibConsents = JSON.parse((sib as any).departmentConsents || "{}"); } catch { sibConsents = {}; }
+        sibConsents[departmentId] = consentObj;
+        await prisma.openMeeting.update({
+          where: { id: sib.id },
+          data: { departmentConsents: JSON.stringify(sibConsents) }
+        });
+      }
+    }
+
+    return {
+      ...updated,
+      projectName: updated.project?.name,
+      projectCode: updated.project?.code
+    };
+  },
+
   async getExecutionScheduleByQrToken(qrToken: string): Promise<any> {
     let s = await prisma.executionSchedule.findFirst({
       where: {
@@ -813,28 +1328,53 @@ export const dbService = {
       include: { project: true }
     });
 
-    if (!s) {
-      const matchingProject = await prisma.auditProject.findFirst({
-        where: {
-          OR: [
-            { code: qrToken },
-            { id: qrToken }
-          ]
-        }
+    if (!s) return null;
+
+    // Merge consents & departments across sibling schedules if belonging to a project
+    let mergedDepartments = s.departments;
+    let mergedConsents: Record<string, any> = {};
+    try {
+      mergedConsents = JSON.parse((s as any).departmentConsents || "{}");
+    } catch {
+      mergedConsents = {};
+    }
+
+    if (s.projectId) {
+      const siblingSchedules = await prisma.executionSchedule.findMany({
+        where: { projectId: s.projectId }
       });
-      if (matchingProject) {
-        return this.ensureExecutionScheduleForProject(matchingProject.id);
+
+      if (s.project?.departments) {
+        mergedDepartments = s.project.departments;
+      } else {
+        const deptSet = new Set<string>();
+        siblingSchedules.forEach(sib => {
+          (sib.departments || "").split(",").forEach(d => {
+            const clean = d.trim();
+            if (clean) deptSet.add(clean);
+          });
+        });
+        if (deptSet.size > 0) mergedDepartments = Array.from(deptSet).join(", ");
       }
-      return null;
+
+      for (const sib of siblingSchedules) {
+        try {
+          const sibConsents = JSON.parse((sib as any).departmentConsents || "{}");
+          Object.assign(mergedConsents, sibConsents);
+        } catch {
+          // ignore invalid json
+        }
+      }
     }
 
     const confirmationMap = await getScheduleAttendeeConfirmations([s.id]);
     return {
       id: s.id,
       projectId: s.projectId,
+      openMeetingId: s.openMeetingId,
       projectName: s.project?.name,
       projectCode: s.project?.code,
-      departments: s.departments,
+      departments: mergedDepartments,
       address: s.address,
       visitNumber: s.visitNumber,
       actualVisitDate: s.actualVisitDate,
@@ -853,11 +1393,12 @@ export const dbService = {
       ownerName: s.ownerName,
       lastModifiedBy: s.lastModifiedBy,
       qrToken: (s as any).qrToken ?? s.id,
-      departmentConsents: (s as any).departmentConsents ?? "{}",
+      departmentConsents: JSON.stringify(mergedConsents),
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString()
     };
   },
+
   async updateDepartmentConsent(scheduleId: string, departmentId: string, consentObj: { status: string; acceptedByUserId: string; acceptedByUserName: string; acceptedByUserEmail: string; timestamp: string; comments?: string }): Promise<any> {
     const s = await prisma.executionSchedule.findUnique({ where: { id: scheduleId } });
     if (!s) throw new Error("Execution Schedule not found");
@@ -878,7 +1419,22 @@ export const dbService = {
       },
       include: { project: true }
     });
-    
+
+    if (s.projectId) {
+      const siblingSchedules = await prisma.executionSchedule.findMany({
+        where: { projectId: s.projectId, NOT: { id: scheduleId } }
+      });
+      for (const sib of siblingSchedules) {
+        let sibConsents: Record<string, any> = {};
+        try { sibConsents = JSON.parse((sib as any).departmentConsents || "{}"); } catch { sibConsents = {}; }
+        sibConsents[departmentId] = consentObj;
+        await prisma.executionSchedule.update({
+          where: { id: sib.id },
+          data: { departmentConsents: JSON.stringify(sibConsents) }
+        });
+      }
+    }
+
     return {
       ...updated,
       projectName: updated.project?.name,
@@ -917,6 +1473,7 @@ export const dbService = {
     return {
       id: s.id,
       projectId: s.projectId,
+      openMeetingId: s.openMeetingId,
       projectName: s.project.name,
       projectCode: s.project.code,
       departments: s.departments,
